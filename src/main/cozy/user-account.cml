@@ -1,0 +1,22 @@
+# ENTITY
+
+## UserAccount
+
+### ATTRIBUTE
+
+| name         | type     | multiplicity |
+|--------------+----------+--------------|
+| id           | entityid | 1            |
+| displayName  | name     | 1            |
+| email        | string   | 1            |
+| status       | string   | 1            |
+
+## Credential
+
+### ATTRIBUTE
+
+| name           | type     | multiplicity |
+|----------------+----------+--------------|
+| id             | entityid | 1            |
+| userAccountId  | entityid | 1            |
+| passwordHash   | string   | 1            |
