@@ -11,6 +11,28 @@ import org.goldenport.protocol.operation.OperationResponse
 object TextusUserAccountAwaitCommandMain {
   private val DefaultAwaitTimeoutMillis = 60000L
 
+  private def _splitRuntimeArgs(
+    args: Array[String]
+  ): (Array[String], Array[String]) = {
+    val runtime = Vector.newBuilder[String]
+    val command = Vector.newBuilder[String]
+    var i = 0
+    while (i < args.length) {
+      val current = args(i)
+      if (current.startsWith("--cncf.") || current.startsWith("-cncf.")) {
+        runtime += current
+        if (!current.contains("=") && i + 1 < args.length && !args(i + 1).startsWith("-")) {
+          runtime += args(i + 1)
+          i = i + 1
+        }
+      } else {
+        command += current
+      }
+      i = i + 1
+    }
+    (runtime.result().toArray, command.result().toArray)
+  }
+
   private def _awaitTimeoutMillis: Long =
     sys.env
       .get("TEXTUS_AWAIT_TIMEOUT_MILLIS")
@@ -19,7 +41,8 @@ object TextusUserAccountAwaitCommandMain {
       .getOrElse(DefaultAwaitTimeoutMillis)
 
   def main(args: Array[String]): Unit = {
-    val normalized = CommandProtocolHelp.normalizeArgs(args) match {
+    val (runtimeArgs, commandArgs) = _splitRuntimeArgs(args)
+    val normalized = CommandProtocolHelp.normalizeArgs(commandArgs) match {
       case Left(code) =>
         sys.exit(code)
       case Right(xs) =>
@@ -29,6 +52,7 @@ object TextusUserAccountAwaitCommandMain {
     val runtime = new CncfRuntime()
     val result = runtime
       .initializeForEmbedding(
+        args = runtimeArgs,
         modeHint = Some(RunMode.Command),
         extraComponents = subsystem =>
           DomainComponent.Factory().create(ComponentCreate(subsystem, ComponentOrigin.Main))

@@ -6,21 +6,31 @@ cd "$ROOT_DIR"
 
 KEEP_SCRIPTED_ARTIFACTS="${KEEP_SCRIPTED_ARTIFACTS:-0}"
 
+SCRIPTED_DIR="target/scripted"
+CONFIG_DIR="${SCRIPTED_DIR}/config"
+MOUNT_CONFIG_FILE="${CONFIG_DIR}/mount/config.conf"
+CRUD_CONFIG_FILE="${CONFIG_DIR}/crud/config.conf"
+DB_BASENAME="scripted-user-account.sqlite"
+RUNTIME_MOUNT_ARG="--cncf.config.file=${MOUNT_CONFIG_FILE}"
+RUNTIME_CRUD_ARG="--cncf.config.file=${CRUD_CONFIG_FILE}"
+
 # NOTE:
 # DataStoreSpace currently reads sqlite path via ConfigurationAccess.getString and
-# obtains wrapped values (e.g. StringValue(db.sqlite)).
-# Keep this as-is to preserve the current runtime behavior in reproducible tests.
-mkdir -p .cncf
-cat > .cncf/config.conf <<'EOF'
-"cncf.datastore.sqlite.path" = "db.sqlite"
+# obtains wrapped values (e.g. StringValue(scripted-user-account.sqlite)).
+mkdir -p "$(dirname "$MOUNT_CONFIG_FILE")" "$(dirname "$CRUD_CONFIG_FILE")"
+cat > "$MOUNT_CONFIG_FILE" <<'EOF'
+"cncf.logging.level" = "warn"
+EOF
+cat > "$CRUD_CONFIG_FILE" <<EOF
+"cncf.datastore.sqlite.path" = "${DB_BASENAME}"
 EOF
 
-DB_FILE="StringValue(db.sqlite)"
+DB_FILE="StringValue(${DB_BASENAME})"
 rm -f "$DB_FILE"
 cleanup() {
   if [[ "$KEEP_SCRIPTED_ARTIFACTS" != "1" ]]; then
     rm -f "$DB_FILE"
-    rm -rf .cncf
+    rm -rf "$SCRIPTED_DIR"
   fi
 }
 trap cleanup EXIT
@@ -43,11 +53,11 @@ echo "[1/7] compile"
 sbt --batch compile
 
 echo "[2/7] domain mount check"
-sbt --batch "runMain org.textus.useraccount.UserAccountCommandMain command admin.component.list"
+sbt --batch "runMain org.textus.useraccount.UserAccountCommandMain command ${RUNTIME_MOUNT_ARG} admin.component.list"
 
 echo "[3/7] create user"
 CREATE_OUT="$(
-  sbt --batch "runMain ${DRIVER_MAIN} domain.entity.createUserAccount --displayName Alice --email alice@example.com --status active" \
+  sbt --batch "runMain ${DRIVER_MAIN} ${RUNTIME_CRUD_ARG} domain.entity.createUserAccount --displayName Alice --email alice@example.com --status active" \
   2>&1
 )" || {
   echo "$CREATE_OUT"
@@ -69,14 +79,14 @@ fi
 echo "user id: $USER_ID"
 
 echo "[4/7] load user"
-sbt --batch "runMain ${DRIVER_MAIN} domain.entity.loadUserAccount --id ${USER_ID}"
+sbt --batch "runMain ${DRIVER_MAIN} ${RUNTIME_CRUD_ARG} domain.entity.loadUserAccount --id ${USER_ID}"
 
 echo "[5/7] update user"
-sbt --batch "runMain ${DRIVER_MAIN} domain.entity.updateUserAccount --id ${USER_ID} --status suspended"
-sbt --batch "runMain ${DRIVER_MAIN} domain.entity.loadUserAccount --id ${USER_ID}" | rg -q "suspended"
+sbt --batch "runMain ${DRIVER_MAIN} ${RUNTIME_CRUD_ARG} domain.entity.updateUserAccount --id ${USER_ID} --status suspended"
+sbt --batch "runMain ${DRIVER_MAIN} ${RUNTIME_CRUD_ARG} domain.entity.loadUserAccount --id ${USER_ID}" | rg -q "suspended"
 
 echo "[6/7] delete user (hard)"
-sbt --batch "runMain ${DRIVER_MAIN} domain.entity.deleteUserAccountHard --id ${USER_ID}"
+sbt --batch "runMain ${DRIVER_MAIN} ${RUNTIME_CRUD_ARG} domain.entity.deleteUserAccountHard --id ${USER_ID}"
 
 echo "[7/7] verify sqlite"
 if [[ ! -f "$DB_FILE" ]]; then
