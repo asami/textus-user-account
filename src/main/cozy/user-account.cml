@@ -1,22 +1,37 @@
 # ENTITY
 
+## SimpleEntity
+
+### ATTRIBUTE
+
+| name  | type     | multiplicity |
+|-------+----------+--------------|
+| id    | entityid | 1            |
+| name  | name     | 1            |
+| title | string   | 1            |
+
 ## UserAccount
+
+### features
+
+extends = ["SimpleEntity"]
 
 ### ATTRIBUTE
 
 | name         | type     | multiplicity |
 |--------------+----------+--------------|
-| id           | entityid | 1            |
-| displayName  | name     | 1            |
 | email        | string   | 1            |
 | status       | string   | 1            |
 
 ## Credential
 
+### features
+
+extends = ["SimpleEntity"]
+
 ### ATTRIBUTE
 
 | name           | type     | multiplicity |
 |----------------+----------+--------------|
-| id             | entityid | 1            |
 | userAccountId  | entityid | 1            |
 | passwordHash   | string   | 1            |

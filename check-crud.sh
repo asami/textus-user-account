@@ -57,7 +57,7 @@ sbt --batch "runMain org.textus.useraccount.UserAccountCommandMain command ${RUN
 
 echo "[3/7] create user"
 CREATE_OUT="$(
-  sbt --batch "runMain ${DRIVER_MAIN} ${RUNTIME_CRUD_ARG} domain.entity.createUserAccount --displayName Alice --email alice@example.com --status active" \
+  sbt --batch "runMain ${DRIVER_MAIN} ${RUNTIME_CRUD_ARG} domain.entity.createUserAccount --name alice --title Alice --email alice@example.com --status active" \
   2>&1
 )" || {
   echo "$CREATE_OUT"
