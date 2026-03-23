@@ -6,7 +6,7 @@ import java.security.MessageDigest
 import cats.syntax.all.*
 import org.goldenport.Consequence
 import org.goldenport.datatype.Name
-import org.goldenport.model.datatype.EntityId
+import org.simplemodeling.model.datatype.EntityId
 import org.goldenport.protocol.operation.OperationResponse
 import org.goldenport.record.Record
 import org.goldenport.cncf.action.ActionCall
