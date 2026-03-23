@@ -1,6 +1,5 @@
 package org.textus.useraccount
 
-import domain.DomainComponent
 import org.goldenport.cncf.cli.CncfRuntime
 import org.goldenport.cncf.component.{ComponentCreate, ComponentOrigin}
 
@@ -14,7 +13,7 @@ object UserAccountCommandMain:
     val code = CncfRuntime.runWithExtraComponents(
       args,
       subsystem => {
-        DomainComponent.Factory().create(
+        GeneratedDomainComponentLoader.create(
           ComponentCreate(subsystem, ComponentOrigin.Main)
         )
       }

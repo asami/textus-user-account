@@ -1,12 +1,12 @@
 package org.goldenport.cncf.cli
 
-import domain.DomainComponent
 import org.goldenport.Consequence
 import org.goldenport.cncf.action.Action
 import org.goldenport.cncf.cli.help.CommandProtocolHelp
 import org.goldenport.cncf.component.{ComponentCreate, ComponentOrigin}
 import org.goldenport.cncf.job.JobId
 import org.goldenport.protocol.operation.OperationResponse
+import org.textus.useraccount.GeneratedDomainComponentLoader
 
 object TextusUserAccountAwaitCommandMain {
   private val DefaultAwaitTimeoutMillis = 60000L
@@ -55,7 +55,9 @@ object TextusUserAccountAwaitCommandMain {
         args = runtimeArgs,
         modeHint = Some(RunMode.Command),
         extraComponents = subsystem =>
-          DomainComponent.Factory().create(ComponentCreate(subsystem, ComponentOrigin.Main))
+          GeneratedDomainComponentLoader.create(
+            ComponentCreate(subsystem, ComponentOrigin.Main)
+          )
       )
       .flatMap { subsystem =>
         runtime
