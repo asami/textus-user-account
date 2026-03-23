@@ -1,10 +1,86 @@
 # COMPONENT
 
-## domain
+## userAccount
 
 ### PACKAGE
 
-textus.user.account.longpackagenametest.alpha.beta.gamma.delta.epsilon
+org.simplemodeling.textus.useraccount
+
+# SERVICE
+
+## User
+
+### OPERATION
+
+#### provisionalRegistration
+
+##### IN
+
+##### OUT
+
+#### register
+
+##### IN
+
+##### OUT
+
+#### promoteToFormalRegistration
+
+##### IN
+
+##### OUT
+
+#### login
+
+##### IN
+
+##### OUT
+
+#### logout
+
+##### IN
+
+##### OUT
+
+#### changePassword
+
+##### IN
+
+##### OUT
+
+#### getMyAccount
+
+##### IN
+
+##### OUT
+
+## Management
+
+### OPERATION
+
+#### createUserAccount
+
+##### IN
+
+##### OUT
+
+#### updateUserStatus
+
+##### IN
+
+##### OUT
+
+#### deleteUserAccount
+
+##### IN
+
+##### OUT
+
+#### listUserAccounts
+
+##### IN
+
+##### OUT
 
 # ENTITY
 
@@ -43,3 +119,234 @@ extends = ["SimpleEntity"]
 |----------------+----------+--------------|
 | userAccountId  | entityid | 1            |
 | passwordHash   | string   | 1            |
+
+# COMMAND
+
+## UserProvisionalRegistration
+
+### ATTRIBUTE
+
+| name      | type   | multiplicity |
+|-----------+--------+--------------|
+| email     | string | 1            |
+| password  | string | 1            |
+
+## UserRegister
+
+### ATTRIBUTE
+
+| name      | type   | multiplicity |
+|-----------+--------+--------------|
+| name      | name   | 1            |
+| title     | string | 1            |
+| email     | string | 1            |
+| password  | string | 1            |
+
+## UserPromoteToFormalRegistration
+
+### ATTRIBUTE
+
+| name           | type     | multiplicity |
+|----------------+----------+--------------|
+| userAccountId  | entityid | 1            |
+| proofToken     | string   | 1            |
+
+## UserLogin
+
+### ATTRIBUTE
+
+| name      | type   | multiplicity |
+|-----------+--------+--------------|
+| email     | string | 1            |
+| password  | string | 1            |
+
+## UserLogout
+
+### ATTRIBUTE
+
+| name          | type     | multiplicity |
+|---------------+----------+--------------|
+| userAccountId | entityid | 1            |
+
+## UserChangePassword
+
+### ATTRIBUTE
+
+| name             | type     | multiplicity |
+|------------------+----------+--------------|
+| userAccountId    | entityid | 1            |
+| currentPassword  | string   | 1            |
+| newPassword      | string   | 1            |
+
+## AdminCreateUserAccount
+
+### ATTRIBUTE
+
+| name      | type   | multiplicity |
+|-----------+--------+--------------|
+| name      | name   | 1            |
+| title     | string | 1            |
+| email     | string | 1            |
+| status    | string | 1            |
+| password  | string | 1            |
+
+## AdminUpdateUserStatus
+
+### ATTRIBUTE
+
+| name          | type     | multiplicity |
+|---------------+----------+--------------|
+| userAccountId | entityid | 1            |
+| status        | string   | 1            |
+
+## AdminDeleteUserAccount
+
+### ATTRIBUTE
+
+| name          | type     | multiplicity |
+|---------------+----------+--------------|
+| userAccountId | entityid | 1            |
+
+# QUERY
+
+## UserGetMyAccount
+
+### ATTRIBUTE
+
+| name          | type     | multiplicity |
+|---------------+----------+--------------|
+| userAccountId | entityid | 1            |
+
+## AdminListUserAccounts
+
+### ATTRIBUTE
+
+| name    | type   | multiplicity |
+|---------+--------+--------------|
+| status  | string | ?            |
+| email   | string | ?            |
+| offset  | int    | ?            |
+| limit   | int    | ?            |
+
+# OPERATION
+
+## provisionalRegistration
+
+### TYPE
+COMMAND
+
+### INPUT
+UserProvisionalRegistration
+
+### OUTPUT
+UserProvisionalRegistrationResult
+
+## register
+
+### TYPE
+COMMAND
+
+### INPUT
+UserRegister
+
+### OUTPUT
+UserRegisterResult
+
+## promoteToFormalRegistration
+
+### TYPE
+COMMAND
+
+### INPUT
+UserPromoteToFormalRegistration
+
+### OUTPUT
+UserPromoteToFormalRegistrationResult
+
+## login
+
+### TYPE
+COMMAND
+
+### INPUT
+UserLogin
+
+### OUTPUT
+UserLoginResult
+
+## logout
+
+### TYPE
+COMMAND
+
+### INPUT
+UserLogout
+
+### OUTPUT
+UserLogoutResult
+
+## changePassword
+
+### TYPE
+COMMAND
+
+### INPUT
+UserChangePassword
+
+### OUTPUT
+UserChangePasswordResult
+
+## getMyAccount
+
+### TYPE
+QUERY
+
+### INPUT
+UserGetMyAccount
+
+### OUTPUT
+UserAccountResult
+
+## createUserAccount
+
+### TYPE
+COMMAND
+
+### INPUT
+AdminCreateUserAccount
+
+### OUTPUT
+AdminCreateUserAccountResult
+
+## updateUserStatus
+
+### TYPE
+COMMAND
+
+### INPUT
+AdminUpdateUserStatus
+
+### OUTPUT
+AdminUpdateUserStatusResult
+
+## deleteUserAccount
+
+### TYPE
+COMMAND
+
+### INPUT
+AdminDeleteUserAccount
+
+### OUTPUT
+AdminDeleteUserAccountResult
+
+## listUserAccounts
+
+### TYPE
+QUERY
+
+### INPUT
+AdminListUserAccounts
+
+### OUTPUT
+AdminListUserAccountsResult

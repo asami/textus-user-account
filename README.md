@@ -51,9 +51,9 @@ sh check-crud.sh
 
 ドライバMainは以下を使用:
 
-- マウント確認: `org.textus.useraccount.UserAccountCommandMain`
-- CRUD本体(既定): `org.goldenport.cncf.cli.TextusUserAccountSyncCommandMain`
-- 代替(await): `org.goldenport.cncf.cli.TextusUserAccountAwaitCommandMain`
+- マウント確認: `org.simplemodeling.textus.useraccount.cli.UserAccountCommandMain`
+- CRUD本体(既定): `org.simplemodeling.textus.useraccount.cli.TextusUserAccountSyncCommandMain`
+- 代替(await): `org.simplemodeling.textus.useraccount.cli.TextusUserAccountAwaitCommandMain`
 
 ドライバ切替:
 

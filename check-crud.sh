@@ -36,12 +36,13 @@ cleanup() {
 trap cleanup EXIT
 
 DRIVER_MODE="${TEXTUS_CLI_DRIVER:-sync}" # sync | await
+COMPONENT_NAME="${TEXTUS_COMPONENT_NAME:-userAccount}"
 case "$DRIVER_MODE" in
   await)
-    DRIVER_MAIN="org.goldenport.cncf.cli.TextusUserAccountAwaitCommandMain"
+    DRIVER_MAIN="org.simplemodeling.textus.useraccount.cli.TextusUserAccountAwaitCommandMain"
     ;;
   sync)
-    DRIVER_MAIN="org.goldenport.cncf.cli.TextusUserAccountSyncCommandMain"
+    DRIVER_MAIN="org.simplemodeling.textus.useraccount.cli.TextusUserAccountSyncCommandMain"
     ;;
   *)
     echo "Unknown TEXTUS_CLI_DRIVER: $DRIVER_MODE" >&2
@@ -53,11 +54,11 @@ echo "[1/7] compile"
 sbt --batch compile
 
 echo "[2/7] domain mount check"
-sbt --batch "runMain org.textus.useraccount.UserAccountCommandMain command ${RUNTIME_MOUNT_ARG} admin.component.list"
+sbt --batch "runMain org.simplemodeling.textus.useraccount.cli.UserAccountCommandMain command ${RUNTIME_MOUNT_ARG} admin.component.list"
 
 echo "[3/7] create user"
 CREATE_OUT="$(
-  sbt --batch "runMain ${DRIVER_MAIN} ${RUNTIME_CRUD_ARG} domain.entity.createUserAccount --name alice --title Alice --email alice@example.com --status active" \
+  sbt --batch "runMain ${DRIVER_MAIN} ${RUNTIME_CRUD_ARG} ${COMPONENT_NAME}.entity.createUserAccount --name alice --title Alice --email alice@example.com --status active" \
   2>&1
 )" || {
   echo "$CREATE_OUT"
@@ -79,14 +80,14 @@ fi
 echo "user id: $USER_ID"
 
 echo "[4/7] load user"
-sbt --batch "runMain ${DRIVER_MAIN} ${RUNTIME_CRUD_ARG} domain.entity.loadUserAccount --id ${USER_ID}"
+sbt --batch "runMain ${DRIVER_MAIN} ${RUNTIME_CRUD_ARG} ${COMPONENT_NAME}.entity.loadUserAccount --id ${USER_ID}"
 
 echo "[5/7] update user"
-sbt --batch "runMain ${DRIVER_MAIN} ${RUNTIME_CRUD_ARG} domain.entity.updateUserAccount --id ${USER_ID} --status suspended"
-sbt --batch "runMain ${DRIVER_MAIN} ${RUNTIME_CRUD_ARG} domain.entity.loadUserAccount --id ${USER_ID}" | rg -q "suspended"
+sbt --batch "runMain ${DRIVER_MAIN} ${RUNTIME_CRUD_ARG} ${COMPONENT_NAME}.entity.updateUserAccount --id ${USER_ID} --status suspended"
+sbt --batch "runMain ${DRIVER_MAIN} ${RUNTIME_CRUD_ARG} ${COMPONENT_NAME}.entity.loadUserAccount --id ${USER_ID}" | rg -q "suspended"
 
 echo "[6/7] delete user (hard)"
-sbt --batch "runMain ${DRIVER_MAIN} ${RUNTIME_CRUD_ARG} domain.entity.deleteUserAccountHard --id ${USER_ID}"
+sbt --batch "runMain ${DRIVER_MAIN} ${RUNTIME_CRUD_ARG} ${COMPONENT_NAME}.entity.deleteUserAccountHard --id ${USER_ID}"
 
 echo "[7/7] verify sqlite"
 if [[ ! -f "$DB_FILE" ]]; then

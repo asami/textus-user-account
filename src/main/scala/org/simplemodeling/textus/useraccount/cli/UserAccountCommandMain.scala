@@ -1,7 +1,8 @@
-package org.textus.useraccount
+package org.simplemodeling.textus.useraccount.cli
 
 import org.goldenport.cncf.cli.CncfRuntime
 import org.goldenport.cncf.component.{ComponentCreate, ComponentOrigin}
+import org.simplemodeling.textus.useraccount.GeneratedDomainComponentLoader
 
 /*
  * @since   May. 23, 2025

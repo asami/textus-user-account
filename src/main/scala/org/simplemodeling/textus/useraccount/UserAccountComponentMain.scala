@@ -1,4 +1,4 @@
-package org.textus.useraccount
+package org.simplemodeling.textus.useraccount
 
 import org.goldenport.cncf.CncfVersion
 import org.goldenport.cncf.component.Component
