@@ -1,90 +1,226 @@
 # COMPONENT
 
-## userAccount
+## UserAccount
 
 ### PACKAGE
 
 org.simplemodeling.textus.useraccount
 
+### DESCRIPTION
+
+User account domain component for registration, authentication, and administrative lifecycle management.
+
+### SPECIFICATION
+
+This component is a bounded context dedicated to user identity inside Textus.
+The source is intentionally executable as model input and readable as domain documentation.
+
+### DOMAIN_INTENT
+
+Two domain viewpoints are modeled:
+1. End-user journey (`User` service): provisional registration, account completion, sign-in/out, and password change.
+2. Back-office governance (`Management` service): account creation, status control, deletion, and list/search.
+
+### LIFECYCLE
+
+Typical self-service progression:
+1. `provisionalRegistration`
+2. `register`
+3. `promoteToFormalRegistration`
+4. `login` / `logout`
+5. `changePassword`
+
+Administrative flows may provision directly (`createUserAccount`) and control state via `updateUserStatus` or `deleteUserAccount`.
+
+### SECURITY_NOTES
+
+- `password` fields are request-time inputs only.
+- Persisted `Credential` keeps `passwordHash` and does not store raw passwords.
+- Privileged operations are separated in the `Management` service.
+
+### DOC_USAGE
+
+Descriptions under `COMPONENT`, `SERVICE`, and `OPERATION` are intended to be reused for generated program comments and user-facing artifacts such as OpenAPI and Help text.
+
 # SERVICE
 
 ## User
+
+### DESCRIPTION
+
+Public user-facing operations for account onboarding and authentication.
 
 ### OPERATION
 
 #### provisionalRegistration
 
+##### DESCRIPTION
+
+Creates a provisional account from minimum registration information.
+
 ##### IN
 
+Initial registration payload with minimum information.
+
 ##### OUT
+
+Result of provisional account creation.
 
 #### register
 
+##### DESCRIPTION
+
+Completes account profile data and transitions to registered state.
+
 ##### IN
 
+Profile completion data for registering a provisional user.
+
 ##### OUT
+
+Result of account registration.
 
 #### promoteToFormalRegistration
 
+##### DESCRIPTION
+
+Promotes an account from provisional to formal status.
+
 ##### IN
 
+Promotion request from provisional to formal account.
+
 ##### OUT
+
+Result of formalization workflow.
 
 #### login
 
+##### DESCRIPTION
+
+Authenticates a user with identity and secret credentials.
+
 ##### IN
 
+Authentication input (identifier and secret).
+
 ##### OUT
+
+Authentication result and runtime response payload.
 
 #### logout
 
+##### DESCRIPTION
+
+Terminates the active session context for the user.
+
 ##### IN
 
+Session/account context for sign-out.
+
 ##### OUT
+
+Logout execution result.
 
 #### changePassword
 
+##### DESCRIPTION
+
+Replaces the current password with a new password.
+
 ##### IN
 
+Current credential and new credential material.
+
 ##### OUT
+
+Credential update result.
 
 #### getMyAccount
 
+##### DESCRIPTION
+
+Returns the current account projection for the requesting user.
+
 ##### IN
+
+Current user identity context.
 
 ##### OUT
 
+Current account projection.
+
 ## Management
+
+### DESCRIPTION
+
+Administrative operations for user account governance.
 
 ### OPERATION
 
 #### createUserAccount
 
+##### DESCRIPTION
+
+Creates a user account from the management console context.
+
 ##### IN
 
+Administrative account provisioning payload.
+
 ##### OUT
+
+Provisioning result.
 
 #### updateUserStatus
 
+##### DESCRIPTION
+
+Updates the operational status of a target account.
+
 ##### IN
 
+Target account and new status value.
+
 ##### OUT
+
+Status update result.
 
 #### deleteUserAccount
 
+##### DESCRIPTION
+
+Deletes a target user account under administrative control.
+
 ##### IN
 
+Target account identifier for deletion.
+
 ##### OUT
+
+Deletion result.
 
 #### listUserAccounts
 
+##### DESCRIPTION
+
+Lists user accounts with optional filters and pagination.
+
 ##### IN
 
+Filter and pagination fields for management listing.
+
 ##### OUT
+
+List/search result projection.
 
 # ENTITY
 
 ## SimpleEntity
+
+### DESCRIPTION
+
+Shared identity base for domain entities.
 
 ### ATTRIBUTE
 
@@ -100,6 +236,10 @@ org.simplemodeling.textus.useraccount
 
 extends = ["SimpleEntity"]
 
+### DESCRIPTION
+
+Core user profile and operational account state.
+
 ### ATTRIBUTE
 
 | name         | type     | multiplicity |
@@ -113,6 +253,10 @@ extends = ["SimpleEntity"]
 
 extends = ["SimpleEntity"]
 
+### DESCRIPTION
+
+Credential aggregate storing hashed secret and owner link.
+
 ### ATTRIBUTE
 
 | name           | type     | multiplicity |
@@ -124,6 +268,10 @@ extends = ["SimpleEntity"]
 
 ## UserProvisionalRegistration
 
+### DESCRIPTION
+
+Minimum command to open a provisional account.
+
 ### ATTRIBUTE
 
 | name      | type   | multiplicity |
@@ -132,6 +280,10 @@ extends = ["SimpleEntity"]
 | password  | string | 1            |
 
 ## UserRegister
+
+### DESCRIPTION
+
+Command to complete user profile and finalize registration data.
 
 ### ATTRIBUTE
 
@@ -144,6 +296,10 @@ extends = ["SimpleEntity"]
 
 ## UserPromoteToFormalRegistration
 
+### DESCRIPTION
+
+Command to promote a provisional account into formal state.
+
 ### ATTRIBUTE
 
 | name           | type     | multiplicity |
@@ -152,6 +308,10 @@ extends = ["SimpleEntity"]
 | proofToken     | string   | 1            |
 
 ## UserLogin
+
+### DESCRIPTION
+
+Authentication command for user sign-in.
 
 ### ATTRIBUTE
 
@@ -162,6 +322,10 @@ extends = ["SimpleEntity"]
 
 ## UserLogout
 
+### DESCRIPTION
+
+Command to terminate current user session context.
+
 ### ATTRIBUTE
 
 | name          | type     | multiplicity |
@@ -169,6 +333,10 @@ extends = ["SimpleEntity"]
 | userAccountId | entityid | 1            |
 
 ## UserChangePassword
+
+### DESCRIPTION
+
+Command to replace an existing password with a new one.
 
 ### ATTRIBUTE
 
@@ -179,6 +347,10 @@ extends = ["SimpleEntity"]
 | newPassword      | string   | 1            |
 
 ## AdminCreateUserAccount
+
+### DESCRIPTION
+
+Administrative command to provision an account directly.
 
 ### ATTRIBUTE
 
@@ -192,6 +364,10 @@ extends = ["SimpleEntity"]
 
 ## AdminUpdateUserStatus
 
+### DESCRIPTION
+
+Administrative command to mutate account status.
+
 ### ATTRIBUTE
 
 | name          | type     | multiplicity |
@@ -200,6 +376,10 @@ extends = ["SimpleEntity"]
 | status        | string   | 1            |
 
 ## AdminDeleteUserAccount
+
+### DESCRIPTION
+
+Administrative command to delete an account.
 
 ### ATTRIBUTE
 
@@ -211,6 +391,10 @@ extends = ["SimpleEntity"]
 
 ## UserGetMyAccount
 
+### DESCRIPTION
+
+Query to obtain account data for the current user.
+
 ### ATTRIBUTE
 
 | name          | type     | multiplicity |
@@ -218,6 +402,10 @@ extends = ["SimpleEntity"]
 | userAccountId | entityid | 1            |
 
 ## AdminListUserAccounts
+
+### DESCRIPTION
+
+Administrative query to list accounts with optional filters.
 
 ### ATTRIBUTE
 
