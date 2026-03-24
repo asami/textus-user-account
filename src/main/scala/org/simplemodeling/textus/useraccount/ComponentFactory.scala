@@ -2,6 +2,7 @@ package org.simplemodeling.textus.useraccount
 
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import scala.collection.concurrent.TrieMap
 
 import cats.syntax.all.*
 import org.goldenport.Consequence
@@ -10,8 +11,9 @@ import org.simplemodeling.model.datatype.EntityId
 import org.goldenport.protocol.operation.OperationResponse
 import org.goldenport.record.Record
 import org.goldenport.cncf.action.ActionCall
-import org.goldenport.cncf.component.{Component, ComponentCreate}
+import org.goldenport.cncf.component.{Component, ComponentCreate, EntityRuntimePlanProvider}
 import org.goldenport.cncf.directive.Query
+import org.goldenport.cncf.entity.runtime.{EntityMemoryPolicy, EntityRuntimePlan, PartitionStrategy, WorkingSetDefinition}
 import org.goldenport.cncf.unitofwork.ExecUowM
 import org.simplemodeling.model.directive.{Condition, Update}
 
@@ -22,12 +24,40 @@ import org.simplemodeling.textus.useraccount.entity.update.{Credential => Creden
 
 /*
  * @since   Mar. 23, 2026
- * @version Mar. 23, 2026
+ * @version Mar. 24, 2026
  * @author  ASAMI, Tomoharu
  */
-class ComponentFactory extends UserAccountComponent.Factory:
+class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePlanProvider:
   import UserAccountComponent.ManagementService
   import UserAccountComponent.UserService
+
+  override protected def create_Components(params: ComponentCreate): Vector[Component] =
+    Vector(UserAccountComponent())
+
+  override val entityRuntimePlans: Vector[EntityRuntimePlan[Any]] =
+    Vector(
+      EntityRuntimePlan(
+        entityName = UserAccountQuery.collectionId.name,
+        memoryPolicy = EntityMemoryPolicy.LoadToMemory,
+        workingSet = Some(
+          WorkingSetDefinition(
+            entityName = UserAccountQuery.collectionId.name,
+            entities = ComponentFactory.LoginWorkingSet.snapshot
+          )
+        ),
+        partitionStrategy = PartitionStrategy.byOrganizationMonthUTC,
+        maxPartitions = 64,
+        maxEntitiesPerPartition = 10000
+      ),
+      EntityRuntimePlan(
+        entityName = CredentialQuery.collectionId.name,
+        memoryPolicy = EntityMemoryPolicy.StoreOnly,
+        workingSet = None,
+        partitionStrategy = PartitionStrategy.byOrganizationMonthUTC,
+        maxPartitions = 64,
+        maxEntitiesPerPartition = 10000
+      )
+    )
 
   override val User: UserAccountComponent.UserServiceFactory = new UserAccountComponent.UserServiceFactory:
     override def createProvisionalRegistrationActionCall(
@@ -138,6 +168,7 @@ class ComponentFactory extends UserAccountComponent.Factory:
         userId <- exec_from(requiredEntityId(record, List("userAccountId", "user_account_id", "id")))
         credentials <- credentialsForUser(userId)
         _ <- deleteCredentials(credentials)
+        _ <- exec_from(removeLoggedInUser(userId))
         _ <- entity_delete(userId)
       yield
         OperationResponse.void
@@ -163,6 +194,7 @@ class ComponentFactory extends UserAccountComponent.Factory:
         password <- exec_from(requiredString(record, List("password")))
         user <- userByEmail(email)
         credential <- credentialByUserAndPassword(user.id, password)
+        _ <- exec_from(addLoggedInUser(user))
       yield
         OperationResponse(
           Record.data(
@@ -174,7 +206,8 @@ class ComponentFactory extends UserAccountComponent.Factory:
 
     protected final def logout(record: Record): ExecUowM[OperationResponse] =
       for
-        _ <- exec_from(requiredEntityId(record, List("userAccountId", "user_account_id", "id")))
+        userId <- exec_from(requiredEntityId(record, List("userAccountId", "user_account_id", "id")))
+        _ <- exec_from(removeLoggedInUser(userId))
       yield
         OperationResponse.void
 
@@ -253,6 +286,22 @@ class ComponentFactory extends UserAccountComponent.Factory:
       val digest = MessageDigest.getInstance("SHA-256")
       val bytes = digest.digest(password.getBytes(StandardCharsets.UTF_8))
       bytes.map(b => f"${b & 0xff}%02x").mkString
+
+    private def addLoggedInUser(user: UserAccountEntity): Consequence[Unit] =
+      ComponentFactory.LoginWorkingSet.upsert(user)
+      component
+        .flatMap(_.entitySpace.entityOption[Any](UserAccountQuery.collectionId.name))
+        .flatMap(_.storage.memoryRealm)
+        .foreach(_.put(user))
+      Consequence.unit
+
+    private def removeLoggedInUser(userId: EntityId): Consequence[Unit] =
+      ComponentFactory.LoginWorkingSet.remove(userId)
+      component
+        .flatMap(_.entitySpace.entityOption[Any](UserAccountQuery.collectionId.name))
+        .flatMap(_.storage.memoryRealm)
+        .foreach(_.remove(userId))
+      Consequence.unit
 
     private def requiredString(record: Record, keys: List[String]): Consequence[String] =
       recordGetAsC[String](record, keys).flatMap(v => Consequence.successOrPropertyNotFound(keys.head, v))
@@ -362,6 +411,18 @@ class ComponentFactory extends UserAccountComponent.Factory:
       listUserAccounts(action.record)
 
 object ComponentFactory:
+  private object LoginWorkingSet:
+    private val users = TrieMap.empty[EntityId, UserAccountEntity]
+
+    def upsert(user: UserAccountEntity): Unit =
+      users.put(user.id, user)
+
+    def remove(id: EntityId): Unit =
+      users.remove(id)
+
+    def snapshot: Vector[UserAccountEntity] =
+      users.values.toVector
+
   def create(componentCreate: ComponentCreate): Vector[Component] =
     new ComponentFactory().create(componentCreate)
 

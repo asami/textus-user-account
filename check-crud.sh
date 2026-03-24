@@ -8,24 +8,30 @@ KEEP_SCRIPTED_ARTIFACTS="${KEEP_SCRIPTED_ARTIFACTS:-0}"
 
 SCRIPTED_DIR="target/scripted"
 CONFIG_DIR="${SCRIPTED_DIR}/config"
+WORK_DIR="${SCRIPTED_DIR}/work/user-account"
 MOUNT_CONFIG_FILE="${CONFIG_DIR}/mount/config.conf"
 CRUD_CONFIG_FILE="${CONFIG_DIR}/crud/config.conf"
-DB_BASENAME="scripted-user-account.sqlite"
+DB_FILENAME="scripted-user-account.sqlite"
+DB_FILE="${WORK_DIR}/${DB_FILENAME}"
 RUNTIME_MOUNT_ARG="--cncf.config.file=${MOUNT_CONFIG_FILE}"
 RUNTIME_CRUD_ARG="--cncf.config.file=${CRUD_CONFIG_FILE}"
 
-# NOTE:
-# DataStoreSpace currently reads sqlite path via ConfigurationAccess.getString and
-# obtains wrapped values (e.g. StringValue(scripted-user-account.sqlite)).
-mkdir -p "$(dirname "$MOUNT_CONFIG_FILE")" "$(dirname "$CRUD_CONFIG_FILE")"
+# Work files rule:
+# Runtime/generated artifacts must be created under target/scripted/work/*.
+mkdir -p "$(dirname "$MOUNT_CONFIG_FILE")" "$(dirname "$CRUD_CONFIG_FILE")" "$WORK_DIR"
 cat > "$MOUNT_CONFIG_FILE" <<'EOF'
 "cncf.logging.level" = "warn"
 EOF
 cat > "$CRUD_CONFIG_FILE" <<EOF
-"cncf.datastore.sqlite.path" = "${DB_BASENAME}"
+cncf {
+  datastore {
+    sqlite {
+      path = "${DB_FILE}"
+    }
+  }
+}
 EOF
 
-DB_FILE="StringValue(${DB_BASENAME})"
 rm -f "$DB_FILE"
 cleanup() {
   if [[ "$KEEP_SCRIPTED_ARTIFACTS" != "1" ]]; then

@@ -43,3 +43,9 @@ project/**/bsp.log
 
 ### IntelliJ IDEA ###
 .idea/
+
+# Local sqlite artifacts (script/test runtime)
+*.sqlite
+*.db
+StringValue(*.sqlite)
+StringValue(*.db)

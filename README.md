@@ -44,6 +44,7 @@ sbt cozyBuildSAR
 `command` 経由の CRUD 検証は `check-crud.sh` で再現できます。
 テスト用 `config.conf` は `target/scripted/config/*/config.conf` に生成され、
 CNCF起動パラメタ `--cncf.config.file=...` で各Mainに渡されます。
+作業ファイル（sqlite等）は `target/scripted/work/*` 配下に作成されます。
 
 ```bash
 sh check-crud.sh
