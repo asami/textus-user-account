@@ -12,7 +12,8 @@ import org.simplemodeling.textus.useraccount.GeneratedDomainComponentLoader
 
 /*
  * @since   May. 23, 2025
- * @version Mar. 23, 2026
+ *  version Mar. 23, 2026
+ * @version Mar. 25, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusUserAccountAwaitCommandMain {

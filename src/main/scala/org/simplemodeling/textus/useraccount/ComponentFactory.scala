@@ -24,7 +24,8 @@ import org.simplemodeling.textus.useraccount.entity.update.{Credential => Creden
 
 /*
  * @since   Mar. 23, 2026
- * @version Mar. 24, 2026
+ *  version Mar. 24, 2026
+ * @version Mar. 25, 2026
  * @author  ASAMI, Tomoharu
  */
 class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePlanProvider:
