@@ -12,6 +12,7 @@ import org.goldenport.protocol.operation.OperationResponse
 import org.goldenport.record.Record
 import org.goldenport.cncf.action.ActionCall
 import org.goldenport.cncf.component.{Component, ComponentCreate, EntityRuntimePlanProvider}
+import org.goldenport.cncf.CncfVersion
 import org.goldenport.cncf.directive.Query
 import org.goldenport.cncf.entity.runtime.{EntityMemoryPolicy, EntityRuntimePlan, PartitionStrategy, WorkingSetDefinition}
 import org.goldenport.cncf.unitofwork.ExecUowM
@@ -425,7 +426,17 @@ object ComponentFactory:
       users.values.toVector
 
   def create(componentCreate: ComponentCreate): Vector[Component] =
-    new ComponentFactory().create(componentCreate)
+    new ComponentFactory().create(componentCreate).map(_withArtifactMetadata)
 
   def createStandalone(): Component =
-    UserAccountComponent()
+    _withArtifactMetadata(UserAccountComponent())
+
+  private def _withArtifactMetadata(component: Component): Component =
+    component.withArtifactMetadata(
+      Component.ArtifactMetadata(
+        sourceType = "standalone",
+        name = "textus-user-account",
+        version = CncfVersion.current,
+        component = Some("textus-user-account")
+      )
+    )

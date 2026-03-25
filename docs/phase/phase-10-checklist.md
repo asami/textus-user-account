@@ -8,3 +8,10 @@
   - Status: DONE
   - Target: Component package override + EntityValue `${package}/entity/*`
   - Repos: `kaleidox`, `cozy`, `simple-modeler`, `textus-user-account`
+
+- TU-02 remaining instruction
+  - Status: DONE
+  - Target: operation metadata integration + runtime/projection visibility
+  - Evidence:
+    - `runMain org.simplemodeling.textus.useraccount.cli.UserAccountCommandMain --help` exposes the CLI command surface
+    - `runMain org.simplemodeling.textus.useraccount.cli.UserAccountCommandMain command meta.schema` now returns component schema with `artifact`, `services`, `aggregateCollections`, `viewCollections`, and `operationDefinitions`
