@@ -1,3 +1,166 @@
+User Account
+============
+
+This document is a literate model for the Textus user-account domain.
+It is designed to remain executable as CML input while also acting as
+human-readable specification text.
+
+The model keeps domain structure and operational intent in a single source:
+
+- `# COMPONENT` defines scope and architecture intent.
+- `# SERVICE` and nested `# OPERATION` definitions explain behavior.
+- `# ENTITY`, `# COMMAND`, and `# QUERY` define the executable data model.
+- `# OPERATION` binds service operations to command/query inputs and outputs.
+
+This component separates user-facing behavior from administrative governance,
+and keeps security-sensitive behavior explicit at operation boundaries.
+
+The registration model distinguishes three related but different actions:
+
+- `provisionalRegistration` creates a provisional account from minimum input.
+- `register` creates a regular account through a normal registration flow.
+- `promoteToFormalRegistration` upgrades a provisional account into a formal one.
+
+This distinction is intentional. It allows the component to model lightweight
+lead capture, ordinary self-service registration, and explicit promotion of a
+previously provisional account as separate domain behaviors.
+
+# VISION
+
+## TrustedIdentityFoundation
+
+### SUMMARY
+
+Provide a trusted user-identity foundation for Textus.
+
+### GOAL
+
+Establish a coherent identity basis that supports registration, authentication, and governed account management across the domain.
+
+### PRECONDITION
+
+Textus treats user identity as a first-class domain concern rather than a peripheral technical detail.
+
+### POSTCONDITION
+
+The domain has a clear strategic direction for identity-centered component and service design.
+
+# CONTEXT
+
+## TextusIdentityBackground
+
+### SUMMARY
+
+Describe the narrative background around Textus identity handling.
+
+### DESCRIPTION
+
+Textus needs a shared identity model that supports both end-user self-service and governed administrative control.
+
+# SYSTEM CONTEXT
+
+## TextusIdentityBoundary
+
+### SUMMARY
+
+Describe the external system boundary around user-account behavior.
+
+### DESCRIPTION
+
+The user-account subsystem sits between end users, back-office operators, and surrounding delivery or notification systems.
+
+# CONTEXT MAP
+
+## TextusIdentityContextMap
+
+### SUMMARY
+
+Describe the bounded-context relationships around identity handling.
+
+### DESCRIPTION
+
+The user-account model is expected to relate to surrounding contexts such as notification, customer support, and application-specific account usage.
+
+# USE CASE
+
+## textus_identity_lifecycle
+
+### SUMMARY
+
+Describe the domain-wide user identity lifecycle used by Textus.
+
+### PRIMARY ACTOR
+
+EndUser
+
+### SECONDARY ACTOR
+
+BackOfficeOperator
+
+### GOAL
+
+Provide a shared domain-level use-case definition that frames component-specific user-account behavior.
+
+### PRECONDITION
+
+The Textus domain is configured to manage user identity as an executable business capability.
+
+### POSTCONDITION
+
+The domain model exposes a reusable identity lifecycle description above individual component scope.
+
+# CAPABILITY
+
+## Authentication
+
+### SUMMARY
+
+Provide authentication capability for Textus user identity.
+
+### PRIMARY ACTOR
+
+EndUser
+
+### SUPPORTING ACTOR
+
+IdentityProvider
+
+### GOAL
+
+Allow the system to authenticate a user and establish an authenticated session context.
+
+### PRECONDITION
+
+The user provides credentials acceptable to the authentication boundary.
+
+### POSTCONDITION
+
+The system can recognize a successfully authenticated user and proceed with authenticated behavior.
+
+# QUALITY
+
+## AuthenticationLatency
+
+### SUMMARY
+
+Authentication should respond quickly enough for interactive use.
+
+### GOAL
+
+Keep user authentication responsive enough to avoid breaking the self-service experience.
+
+# CONSTRAINT
+
+## RuntimePlatform
+
+### SUMMARY
+
+The component must run within the supported JVM-based CNCF runtime environment.
+
+### GOAL
+
+Keep deployment aligned with the current supported execution platform and packaging model.
+
 # COMPONENT
 
 ## UserAccount
@@ -13,13 +176,68 @@ User account domain component for registration, authentication, and administrati
 ### SPECIFICATION
 
 This component is a bounded context dedicated to user identity inside Textus.
-The source is intentionally executable as model input and readable as domain documentation.
+The source is intentionally executable as model input and readable as domain
+documentation.
 
 ### DOMAIN_INTENT
 
 Two domain viewpoints are modeled:
-1. End-user journey (`User` service): provisional registration, account completion, sign-in/out, and password change.
+1. End-user journey (`User` service): provisional registration, regular registration, promotion to formal registration, sign-in/out, and password change.
 2. Back-office governance (`Management` service): account creation, status control, deletion, and list/search.
+
+### USE CASE
+
+#### self_service_account_lifecycle
+
+##### SUMMARY
+
+Cover the end-user account lifecycle from onboarding to authenticated self-service maintenance.
+
+##### ACTOR
+
+User-account lifecycle management in the Textus domain.
+
+##### PRIMARY ACTOR
+
+EndUser
+
+##### SECONDARY ACTOR
+
+BackOfficeOperator
+
+##### SUPPORTING ACTOR
+
+NotificationService
+
+##### STAKEHOLDER
+
+BusinessOwner
+
+##### GOAL
+
+Support provisional onboarding, regular registration, promotion, sign-in, and self-service account maintenance in one coherent component boundary.
+
+##### PRECONDITION
+
+The system is configured to host user-account lifecycle operations for both self-service and management contexts.
+
+##### POSTCONDITION
+
+The component can represent the full user-account lifecycle and expose the corresponding executable services.
+
+##### SCENARIO
+
+###### end_user_flow
+
+1. A prospective user starts with provisional registration or direct registration.
+2. The user may be promoted from provisional to formal status when required conditions are met.
+3. The user signs in and the active account becomes available as a working set.
+4. The user inspects account state or changes secret credentials.
+
+###### management_flow
+
+1. An operator provisions or inspects user accounts from the management side.
+2. The operator updates account status or deletes an account under governance rules.
 
 ### LIFECYCLE
 
@@ -30,7 +248,13 @@ Typical self-service progression:
 4. `login` / `logout`
 5. `changePassword`
 
-Administrative flows may provision directly (`createUserAccount`) and control state via `updateUserStatus` or `deleteUserAccount`.
+These operations are not a strict mandatory sequence.
+`register` is a standalone normal-registration path, while
+`promoteToFormalRegistration` is the path that turns a provisional account into
+its formal form.
+
+Administrative flows may provision directly (`createUserAccount`) and control
+state via `updateUserStatus` or `deleteUserAccount`.
 
 ### SECURITY_NOTES
 
@@ -50,6 +274,72 @@ Descriptions under `COMPONENT`, `SERVICE`, and `OPERATION` are intended to be re
 
 Public user-facing operations for account onboarding and authentication.
 
+### USE CASE
+
+#### onboarding_and_authentication
+
+##### SUMMARY
+
+Provide user-facing registration, promotion, authentication, and self-service account maintenance.
+
+##### ACTOR
+
+User-facing account onboarding and authentication.
+
+##### PRIMARY ACTOR
+
+EndUser
+
+##### SUPPORTING ACTOR
+
+NotificationService
+
+##### STAKEHOLDER
+
+CustomerSupport
+
+##### GOAL
+
+Allow an end user to create or formalize an account, authenticate, and maintain account credentials without administrative intervention.
+
+##### PRECONDITION
+
+The user-facing registration and authentication entry points are available.
+
+##### POSTCONDITION
+
+A user can onboard, authenticate, inspect the current account, and update credentials through self-service behavior.
+
+##### SCENARIO
+
+###### regular_registration
+
+####### STEP
+
+A user submits a normal registration request.
+
+####### STEP
+
+The service creates a regular account and its credential.
+
+####### STEP
+
+The user can later sign in and inspect the current account.
+
+####### ALTERNATE
+
+The service may require an additional verification step before the account becomes fully active.
+
+####### EXCEPTION
+
+If the registration input cannot be validated, the service rejects the request and no account is created.
+
+###### provisional_promotion
+
+1. A user starts from provisional registration.
+2. The service promotes the provisional account to formal status when required conditions are satisfied.
+3. The user proceeds through normal authenticated behavior.
+
 ### OPERATION
 
 #### provisionalRegistration
@@ -57,6 +347,19 @@ Public user-facing operations for account onboarding and authentication.
 ##### DESCRIPTION
 
 Creates a provisional account from minimum registration information.
+
+##### PRECONDITION
+
+The request provides the minimum required registration input.
+
+##### POSTCONDITION
+
+A provisional user account and its credential are created.
+
+##### RULE
+
+- Password is request-only input and must not be persisted as plain text.
+- Shared constraints that fit the schema should be expressed in type or attribute definitions rather than here.
 
 ##### IN
 
@@ -70,35 +373,75 @@ Result of provisional account creation.
 
 ##### DESCRIPTION
 
-Completes account profile data and transitions to registered state.
+Creates a regular user account through the standard registration flow.
+
+##### PRECONDITION
+
+The request satisfies the normal registration input requirements.
+
+##### POSTCONDITION
+
+A regular user account and its credential are created.
+
+##### RULE
+
+- This operation is the normal direct registration path, not promotion from provisional state.
+- Shared constraints that fit the schema should be expressed in type or attribute definitions rather than here.
 
 ##### IN
 
-Profile completion data for registering a provisional user.
+Registration payload for a normal self-service account.
 
 ##### OUT
 
-Result of account registration.
+Result of regular account creation.
 
 #### promoteToFormalRegistration
 
 ##### DESCRIPTION
 
-Promotes an account from provisional to formal status.
+Promotes an existing provisional account into formal status.
+
+##### PRECONDITION
+
+The target account already exists and is currently provisional.
+
+##### POSTCONDITION
+
+The target account transitions from provisional status to formal status.
+
+##### RULE
+
+- Promotion requires domain-specific proof or eligibility checks.
+- Status transition rules belong here when they cannot be expressed by simple schema constraints.
 
 ##### IN
 
-Promotion request from provisional to formal account.
+Promotion request that references a provisional account and proves eligibility
+for formalization.
 
 ##### OUT
 
-Result of formalization workflow.
+Result of provisional-to-formal promotion.
 
 #### login
 
 ##### DESCRIPTION
 
 Authenticates a user with identity and secret credentials.
+
+##### PRECONDITION
+
+The target account exists and can participate in authentication.
+
+##### POSTCONDITION
+
+The authenticated account becomes available in the active working set.
+
+##### RULE
+
+- Authentication compares persisted secret material indirectly, not plain text.
+- Session/runtime working-set behavior is an operational rule rather than a schema constraint.
 
 ##### IN
 
@@ -114,6 +457,14 @@ Authentication result and runtime response payload.
 
 Terminates the active session context for the user.
 
+##### PRECONDITION
+
+The target account is currently active in the session/runtime context.
+
+##### POSTCONDITION
+
+The target account is removed from the active working set.
+
 ##### IN
 
 Session/account context for sign-out.
@@ -127,6 +478,18 @@ Logout execution result.
 ##### DESCRIPTION
 
 Replaces the current password with a new password.
+
+##### PRECONDITION
+
+The current credential presented by the requester is valid.
+
+##### POSTCONDITION
+
+The stored credential secret is replaced with newly derived secret material.
+
+##### RULE
+
+- Plain-text password material is request-only and must not be persisted.
 
 ##### IN
 
@@ -142,6 +505,14 @@ Credential update result.
 
 Returns the current account projection for the requesting user.
 
+##### PRECONDITION
+
+The requester is associated with a resolvable current account context.
+
+##### POSTCONDITION
+
+The current account projection is returned without mutating account state.
+
 ##### IN
 
 Current user identity context.
@@ -156,6 +527,54 @@ Current account projection.
 
 Administrative operations for user account governance.
 
+### USE CASE
+
+#### governed_account_administration
+
+##### SUMMARY
+
+Provide governance-oriented account provisioning, inspection, status control, and deletion.
+
+##### ACTOR
+
+Administrative account governance.
+
+##### PRIMARY ACTOR
+
+BackOfficeOperator
+
+##### SUPPORTING ACTOR
+
+AuditService
+
+##### STAKEHOLDER
+
+SecurityOfficer
+
+##### GOAL
+
+Allow operators to control account lifecycle and operational state under management policy.
+
+##### PRECONDITION
+
+The operator acts in a management context with account-governance responsibility.
+
+##### POSTCONDITION
+
+Operators can provision, inspect, control, and delete accounts under explicit governance rules.
+
+##### SCENARIO
+
+###### account_provisioning
+
+1. An operator creates an account from the management console context.
+2. The service provisions the account and its credential under management control.
+
+###### account_control
+
+1. An operator searches for a target account.
+2. The operator updates account status or deletes the account according to management policy.
+
 ### OPERATION
 
 #### createUserAccount
@@ -163,6 +582,18 @@ Administrative operations for user account governance.
 ##### DESCRIPTION
 
 Creates a user account from the management console context.
+
+##### PRECONDITION
+
+The operator is allowed to provision user accounts from the management side.
+
+##### POSTCONDITION
+
+The requested user account and its credential are created under management control.
+
+##### RULE
+
+- Management provisioning is distinct from end-user self-service registration.
 
 ##### IN
 
@@ -178,6 +609,18 @@ Provisioning result.
 
 Updates the operational status of a target account.
 
+##### PRECONDITION
+
+The target account exists and the operator is allowed to change its status.
+
+##### POSTCONDITION
+
+The account status reflects the requested management change.
+
+##### RULE
+
+- Allowed status transitions are domain rules, not just type constraints.
+
 ##### IN
 
 Target account and new status value.
@@ -192,6 +635,18 @@ Status update result.
 
 Deletes a target user account under administrative control.
 
+##### PRECONDITION
+
+The target account exists and is deletable under management policy.
+
+##### POSTCONDITION
+
+The target account is deleted and dependent credentials are no longer available.
+
+##### RULE
+
+- Deletion policy may include lifecycle or audit constraints outside schema-level validation.
+
 ##### IN
 
 Target account identifier for deletion.
@@ -205,6 +660,14 @@ Deletion result.
 ##### DESCRIPTION
 
 Lists user accounts with optional filters and pagination.
+
+##### PRECONDITION
+
+The requester is allowed to inspect managed account inventory.
+
+##### POSTCONDITION
+
+An account list or search result is returned without mutating stored state.
 
 ##### IN
 
@@ -283,7 +746,7 @@ Minimum command to open a provisional account.
 
 ### DESCRIPTION
 
-Command to complete user profile and finalize registration data.
+Command to create a regular account in the standard user registration flow.
 
 ### ATTRIBUTE
 
@@ -298,7 +761,7 @@ Command to complete user profile and finalize registration data.
 
 ### DESCRIPTION
 
-Command to promote a provisional account into formal state.
+Command to promote an existing provisional account into formal state.
 
 ### ATTRIBUTE
 
@@ -538,3 +1001,35 @@ AdminListUserAccounts
 
 ### OUTPUT
 AdminListUserAccountsResult
+
+# Scenario
+
+## User Journey
+
+1. A new user starts with `provisionalRegistration`.
+2. Another user may instead use `register` directly for the normal path.
+3. A provisional account can later be promoted by `promoteToFormalRegistration`.
+4. Ongoing access uses `login`, `logout`, and `changePassword`.
+5. Self-view reads current state through `getMyAccount`.
+
+## Management Journey
+
+1. Operators can provision with `createUserAccount`.
+2. Operators can control lifecycle with `updateUserStatus`.
+3. Operators can remove obsolete records via `deleteUserAccount`.
+4. Operators can inspect account inventory using `listUserAccounts`.
+
+# Notes
+
+This version intentionally keeps the current flat command/query structure.
+The long-term direction is value-object composition similar to rich
+`SimpleObject` modeling, but runtime validation and generation stability take
+priority for the current milestone.
+
+Descriptions inside `COMPONENT`, `SERVICE`, `COMMAND`, `QUERY`, and `OPERATION`
+are written so they can serve both as executable model metadata and as
+generated help/comment/OpenAPI source text.
+
+At the `OPERATION` level, `PRECONDITION` and `POSTCONDITION` describe execution
+semantics, while `RULE` is reserved for operational/domain rules that are not
+better expressed as parameter types, multiplicity, or schema constraints.
