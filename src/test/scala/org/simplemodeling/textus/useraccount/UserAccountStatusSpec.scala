@@ -1,4 +1,9 @@
 package org.simplemodeling.textus.useraccount
+import org.goldenport.cncf.context.{ExecutionContext, SecurityContext}
+import org.goldenport.cncf.directive.Query
+import org.goldenport.datatype.Name
+import org.simplemodeling.model.datatype.EntityId
+import org.simplemodeling.model.directive.Condition
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 
@@ -37,6 +42,41 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
 
       ComponentFactory.requireAuthenticatable(UserAccountStatus.Provisional).toOption.isDefined shouldBe false
       ComponentFactory.requireAuthenticatable(UserAccountStatus.Suspended).toOption.isDefined shouldBe false
+    }
+
+    "require a non-empty promotion proof token" in {
+      ComponentFactory.requirePromotionProofToken("verified-email").toOption.isDefined shouldBe true
+      ComponentFactory.requirePromotionProofToken("").toOption.isDefined shouldBe false
+      ComponentFactory.requirePromotionProofToken("   ").toOption.isDefined shouldBe false
+    }
+
+    "require management privilege for management operations" in {
+      {
+        given ExecutionContext = ExecutionContext.test(SecurityContext.Privilege.User)
+        ComponentFactory.requireManagementPrivilege.toOption.isDefined shouldBe false
+      }
+
+      {
+        given ExecutionContext = ExecutionContext.test(SecurityContext.Privilege.ApplicationContentManager)
+        ComponentFactory.requireManagementPrivilege.toOption.isDefined shouldBe true
+      }
+    }
+
+    "carry pagination controls into list query directives" in {
+      val condition = org.simplemodeling.textus.useraccount.entity.query.UserAccount(
+        id = Condition.any[EntityId],
+        name = Condition.any[Name],
+        title = Condition.any[String],
+        email = Condition.any[String],
+        status = Condition.any[UserAccountStatus]
+      )
+      val query = Query.plan(
+        condition,
+        limit = Some(10),
+        offset = Some(20)
+      )
+      Query.offsetOf(query) shouldBe Some(20)
+      Query.limitOf(query) shouldBe Some(10)
     }
   }
 }

@@ -13,6 +13,7 @@ import org.goldenport.record.Record
 import org.goldenport.cncf.action.ActionCall
 import org.goldenport.cncf.component.{Component, ComponentCreate, EntityRuntimePlanProvider}
 import org.goldenport.cncf.CncfVersion
+import org.goldenport.cncf.context.ExecutionContext
 import org.goldenport.cncf.directive.Query
 import org.goldenport.cncf.entity.runtime.{EntityMemoryPolicy, EntityRuntimePlan, PartitionStrategy, WorkingSetDefinition}
 import org.goldenport.cncf.unitofwork.ExecUowM
@@ -183,14 +184,17 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       for
         status <- exec_from(optionalStatus(record))
         email <- exec_from(optionalString(record, List("email")))
-        query = UserAccountQuery(
+        offset <- exec_from(optionalInt(record, List("offset")))
+        limit <- exec_from(optionalInt(record, List("limit")))
+        condition = UserAccountQuery(
           id = Condition.any[EntityId],
           name = Condition.any[Name],
           title = Condition.any[String],
           email = email.map(Condition.is[String]).getOrElse(Condition.any[String]),
           status = status.map(Condition.is[UserAccountStatus]).getOrElse(Condition.any[UserAccountStatus])
         )
-        result <- entity_search[UserAccountEntity](UserAccountQuery.collectionId, Query(query))
+        query = Query.plan(condition, limit = limit, offset = offset)
+        result <- entity_search[UserAccountEntity](UserAccountQuery.collectionId, query)
       yield
         OperationResponse.create(result)
 
@@ -232,10 +236,13 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
     protected final def getMyAccount(record: Record): ExecUowM[OperationResponse] =
       for
-        userId <- exec_from(requiredEntityId(record, List("userAccountId", "user_account_id", "id")))
+        userId <- exec_from(currentUserId(record))
         user <- entity_load[UserAccountEntity](userId)
       yield
         OperationResponse(user.toRecord())
+
+    protected final def requireManagementPrivilege(): Consequence[Unit] =
+      ComponentFactory.requireManagementPrivilege(using executionContext)
 
     private def withDefaultStatus(record: Record, defaultStatus: Option[String]): Record =
       defaultStatus match
@@ -311,7 +318,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         .foreach(_.remove(userId))
       Consequence.unit
 
-    private def requiredString(record: Record, keys: List[String]): Consequence[String] =
+    protected final def requiredString(record: Record, keys: List[String]): Consequence[String] =
       recordGetAsC[String](record, keys).flatMap(v => Consequence.successOrPropertyNotFound(keys.head, v))
 
     private def requiredEntityId(record: Record, keys: List[String]): Consequence[EntityId] =
@@ -320,11 +327,20 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     private def optionalString(record: Record, keys: List[String]): Consequence[Option[String]] =
       recordGetAsC[String](record, keys)
 
+    private def optionalInt(record: Record, keys: List[String]): Consequence[Option[Int]] =
+      recordGetAsC[Int](record, keys)
+
     private def requiredStatus(record: Record): Consequence[UserAccountStatus] =
       recordGetAsC[UserAccountStatus](record, List("status")).flatMap(v => Consequence.successOrPropertyNotFound("status", v))
 
     private def optionalStatus(record: Record): Consequence[Option[UserAccountStatus]] =
       recordGetAsC[UserAccountStatus](record, List("status"))
+
+    private def currentUserId(record: Record): Consequence[EntityId] =
+      recordGetAsC[EntityId](record, List("userAccountId", "user_account_id", "id")).flatMap {
+        case Some(id) => ComponentFactory.currentLoggedInUserId(id)
+        case None => ComponentFactory.currentLoggedInUserId()
+      }
 
     private def hasStringValue(record: Record, keys: List[String]): Boolean =
       recordGetAsC[String](record, keys) match
@@ -366,7 +382,12 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     override val action: UserService.PromoteToFormalRegistrationCommand
   ) extends UserService.PromoteToFormalRegistrationActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
-      updateUserStatus(action.record, Some("formal"))
+      for
+        proofToken <- exec_from(requiredString(action.record, List("proofToken", "proof_token")))
+        _ <- exec_from(ComponentFactory.requirePromotionProofToken(proofToken))
+        response <- updateUserStatus(action.record, Some("formal"))
+      yield
+        response
 
   private final case class LoginActionCallImpl(
     core: ActionCall.Core,
@@ -401,38 +422,60 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     override val action: ManagementService.CreateUserAccountCommand
   ) extends ManagementService.CreateUserAccountActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
-      createUserAndCredential(action.record, Some("formal"))
+      for
+        _ <- exec_from(requireManagementPrivilege())
+        response <- createUserAndCredential(action.record, Some("formal"))
+      yield
+        response
 
   private final case class ManagementUpdateUserStatusActionCallImpl(
     core: ActionCall.Core,
     override val action: ManagementService.UpdateUserStatusCommand
   ) extends ManagementService.UpdateUserStatusActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
-      updateUserStatus(action.record, None)
+      for
+        _ <- exec_from(requireManagementPrivilege())
+        response <- updateUserStatus(action.record, None)
+      yield
+        response
 
   private final case class ManagementDeleteUserAccountActionCallImpl(
     core: ActionCall.Core,
     override val action: ManagementService.DeleteUserAccountCommand
   ) extends ManagementService.DeleteUserAccountActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
-      deleteUserAccount(action.record)
+      for
+        _ <- exec_from(requireManagementPrivilege())
+        response <- deleteUserAccount(action.record)
+      yield
+        response
 
   private final case class ManagementListUserAccountsActionCallImpl(
     core: ActionCall.Core,
     override val action: ManagementService.ListUserAccountsQuery
   ) extends ManagementService.ListUserAccountsActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
-      listUserAccounts(action.record)
+      for
+        _ <- exec_from(requireManagementPrivilege())
+        response <- listUserAccounts(action.record)
+      yield
+        response
 
 object ComponentFactory:
-  private val _creatable_statuses = Set(
+  private val _management_capabilities = Set(
+    "content_manager",
+    "content_admin",
+    "application_content_manager"
+  )
+
+  private val _creatable_statuses: Set[UserAccountStatus] = Set(
     UserAccountStatus.Provisional,
     UserAccountStatus.Registered,
     UserAccountStatus.Formal,
     UserAccountStatus.Suspended
   )
 
-  private val _authenticatable_statuses = Set(
+  private val _authenticatable_statuses: Set[UserAccountStatus] = Set(
     UserAccountStatus.Registered,
     UserAccountStatus.Formal
   )
@@ -467,11 +510,29 @@ object ComponentFactory:
     else
       Consequence.failure(s"Status transition ${current.value} -> ${target.value} is not allowed.")
 
+  def requirePromotionProofToken(token: String): Consequence[Unit] =
+    if (token.trim.nonEmpty)
+      Consequence.unit
+    else
+      Consequence.failure("Promotion proof token must not be empty.")
+
   def requireLoggedIn(id: EntityId): Consequence[Unit] =
     if (LoginWorkingSet.contains(id))
       Consequence.unit
     else
       Consequence.failure(s"User account is not active in working set: ${id.print}")
+
+  def requireManagementPrivilege(using ctx: ExecutionContext): Consequence[Unit] =
+    if (ctx.security.hasAnyCapability(_management_capabilities))
+      Consequence.unit
+    else
+      Consequence.failure("Management privilege is required.")
+
+  def currentLoggedInUserId(): Consequence[EntityId] =
+    LoginWorkingSet.currentUserId()
+
+  def currentLoggedInUserId(id: EntityId): Consequence[EntityId] =
+    requireLoggedIn(id).map(_ => id)
 
   private object LoginWorkingSet:
     private val users = TrieMap.empty[EntityId, UserAccountEntity]
@@ -484,6 +545,12 @@ object ComponentFactory:
 
     def contains(id: EntityId): Boolean =
       users.contains(id)
+
+    def currentUserId(): Consequence[EntityId] =
+      users.keys.toVector match
+        case Vector(id) => Consequence.success(id)
+        case Vector() => Consequence.failure("No active user account is available in working set.")
+        case _ => Consequence.failure("Multiple active user accounts are available in working set.")
 
     def snapshot: Vector[UserAccountEntity] =
       users.values.toVector
