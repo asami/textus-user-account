@@ -26,7 +26,7 @@ import org.simplemodeling.textus.useraccount.entity.update.{Credential => Creden
 /*
  * @since   Mar. 23, 2026
  *  version Mar. 24, 2026
- * @version Mar. 25, 2026
+ * @version Apr.  6, 2026
  * @author  ASAMI, Tomoharu
  */
 class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePlanProvider:
@@ -139,6 +139,8 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       for
         password <- exec_from(requiredString(record, List("password")))
         userRecord = withDefaultStatus(record, defaultStatus)
+        status <- exec_from(requiredStatus(userRecord))
+        _ <- exec_from(ComponentFactory.requireCreatableStatus(status))
         user <- exec_from(UserAccountCreate.createWithExecutionContextC(userRecord)(using executionContext))
         created <- entity_create(user)
         credentialRecord = Record.dataAuto(
@@ -156,10 +158,12 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     ): ExecUowM[OperationResponse] =
       for
         userId <- exec_from(requiredEntityId(record, List("userAccountId", "user_account_id", "id")))
-        status <- forcedStatus match
-          case Some(s) => exec_pure(s)
-          case None => exec_from(requiredString(record, List("status")))
-        patchRecord = Record.dataAuto("status" -> status)
+        user <- entity_load[UserAccountEntity](userId)
+        targetStatus <- forcedStatus match
+          case Some(s) => exec_from(ComponentFactory.parseStatus(s))
+          case None => exec_from(requiredStatus(record))
+        _ <- exec_from(ComponentFactory.requireTransition(user.status, targetStatus))
+        patchRecord = Record.dataAuto("status" -> targetStatus.value)
         patch <- exec_from(UserAccountUpdate.createC(patchRecord))
         _ <- entity_update(userId, patch)
       yield
@@ -177,14 +181,14 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
     protected final def listUserAccounts(record: Record): ExecUowM[OperationResponse] =
       for
-        status <- exec_from(optionalString(record, List("status")))
+        status <- exec_from(optionalStatus(record))
         email <- exec_from(optionalString(record, List("email")))
         query = UserAccountQuery(
           id = Condition.any[EntityId],
           name = Condition.any[Name],
           title = Condition.any[String],
           email = email.map(Condition.is[String]).getOrElse(Condition.any[String]),
-          status = status.map(Condition.is[String]).getOrElse(Condition.any[String])
+          status = status.map(Condition.is[UserAccountStatus]).getOrElse(Condition.any[UserAccountStatus])
         )
         result <- entity_search[UserAccountEntity](UserAccountQuery.collectionId, Query(query))
       yield
@@ -195,6 +199,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         email <- exec_from(requiredString(record, List("email")))
         password <- exec_from(requiredString(record, List("password")))
         user <- userByEmail(email)
+        _ <- exec_from(ComponentFactory.requireAuthenticatable(user.status))
         credential <- credentialByUserAndPassword(user.id, password)
         _ <- exec_from(addLoggedInUser(user))
       yield
@@ -209,6 +214,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     protected final def logout(record: Record): ExecUowM[OperationResponse] =
       for
         userId <- exec_from(requiredEntityId(record, List("userAccountId", "user_account_id", "id")))
+        _ <- exec_from(ComponentFactory.requireLoggedIn(userId))
         _ <- exec_from(removeLoggedInUser(userId))
       yield
         OperationResponse.void
@@ -244,7 +250,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         name = Condition.any[Name],
         title = Condition.any[String],
         email = Condition.is(email),
-        status = Condition.any[String]
+        status = Condition.any[UserAccountStatus]
       )
       for
         result <- entity_search[UserAccountEntity](UserAccountQuery.collectionId, Query(query))
@@ -313,6 +319,12 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
     private def optionalString(record: Record, keys: List[String]): Consequence[Option[String]] =
       recordGetAsC[String](record, keys)
+
+    private def requiredStatus(record: Record): Consequence[UserAccountStatus] =
+      recordGetAsC[UserAccountStatus](record, List("status")).flatMap(v => Consequence.successOrPropertyNotFound("status", v))
+
+    private def optionalStatus(record: Record): Consequence[Option[UserAccountStatus]] =
+      recordGetAsC[UserAccountStatus](record, List("status"))
 
     private def hasStringValue(record: Record, keys: List[String]): Boolean =
       recordGetAsC[String](record, keys) match
@@ -389,7 +401,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     override val action: ManagementService.CreateUserAccountCommand
   ) extends ManagementService.CreateUserAccountActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
-      createUserAndCredential(action.record, Some("active"))
+      createUserAndCredential(action.record, Some("formal"))
 
   private final case class ManagementUpdateUserStatusActionCallImpl(
     core: ActionCall.Core,
@@ -413,6 +425,54 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       listUserAccounts(action.record)
 
 object ComponentFactory:
+  private val _creatable_statuses = Set(
+    UserAccountStatus.Provisional,
+    UserAccountStatus.Registered,
+    UserAccountStatus.Formal,
+    UserAccountStatus.Suspended
+  )
+
+  private val _authenticatable_statuses = Set(
+    UserAccountStatus.Registered,
+    UserAccountStatus.Formal
+  )
+
+  private val _transitions = Map[UserAccountStatus, Set[UserAccountStatus]](
+    UserAccountStatus.Provisional -> Set(UserAccountStatus.Formal, UserAccountStatus.Suspended),
+    UserAccountStatus.Registered -> Set(UserAccountStatus.Suspended),
+    UserAccountStatus.Formal -> Set(UserAccountStatus.Suspended),
+    UserAccountStatus.Suspended -> Set(UserAccountStatus.Registered)
+  )
+
+  def parseStatus(p: String): Consequence[UserAccountStatus] =
+    UserAccountStatus.parse(p)
+
+  def requireCreatableStatus(p: UserAccountStatus): Consequence[Unit] =
+    if (_creatable_statuses.contains(p))
+      Consequence.unit
+    else
+      Consequence.failure(s"Status ${p.value} is not allowed for account creation.")
+
+  def requireAuthenticatable(p: UserAccountStatus): Consequence[Unit] =
+    if (_authenticatable_statuses.contains(p))
+      Consequence.unit
+    else
+      Consequence.failure(s"Status ${p.value} cannot authenticate.")
+
+  def requireTransition(current: UserAccountStatus, target: UserAccountStatus): Consequence[Unit] =
+    if (current == target)
+      Consequence.unit
+    else if (_transitions.getOrElse(current, Set.empty).contains(target))
+      Consequence.unit
+    else
+      Consequence.failure(s"Status transition ${current.value} -> ${target.value} is not allowed.")
+
+  def requireLoggedIn(id: EntityId): Consequence[Unit] =
+    if (LoginWorkingSet.contains(id))
+      Consequence.unit
+    else
+      Consequence.failure(s"User account is not active in working set: ${id.print}")
+
   private object LoginWorkingSet:
     private val users = TrieMap.empty[EntityId, UserAccountEntity]
 
@@ -421,6 +481,9 @@ object ComponentFactory:
 
     def remove(id: EntityId): Unit =
       users.remove(id)
+
+    def contains(id: EntityId): Boolean =
+      users.contains(id)
 
     def snapshot: Vector[UserAccountEntity] =
       users.values.toVector

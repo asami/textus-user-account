@@ -708,7 +708,57 @@ Core user profile and operational account state.
 | name         | type     | multiplicity |
 |--------------+----------+--------------|
 | email        | string   | 1            |
-| status       | string   | 1            |
+
+### StateMachine
+
+#### status
+
+##### State
+
+###### provisional
+
+####### Transition
+
+- to :: formal
+- on :: promoteToFormalRegistration
+
+####### Transition
+
+- to :: suspended
+- on :: suspend
+
+###### registered
+
+####### Transition
+
+- to :: suspended
+- on :: suspend
+
+###### formal
+
+####### Transition
+
+- to :: suspended
+- on :: suspend
+
+###### suspended
+
+####### Transition
+
+- to :: registered
+- on :: restore
+
+##### Event
+
+###### provisionalRegistration
+
+###### register
+
+###### promoteToFormalRegistration
+
+###### suspend
+
+###### restore
 
 ## Credential
 
