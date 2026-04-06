@@ -18,7 +18,7 @@ import org.goldenport.cncf.directive.Query
 import org.goldenport.cncf.entity.runtime.{EntityMemoryPolicy, EntityRuntimePlan, PartitionStrategy, WorkingSetDefinition}
 import org.goldenport.cncf.operation.CmlOperationAccess
 import org.goldenport.cncf.security.OperationAccessPolicy
-import org.goldenport.cncf.unitofwork.ExecUowM
+import org.goldenport.cncf.unitofwork.{ExecUowM, UnitOfWorkAuthorization}
 import org.simplemodeling.model.directive.{Condition, Update}
 
 import org.simplemodeling.textus.useraccount.entity.{Credential => CredentialEntity, UserAccount => UserAccountEntity}
@@ -57,6 +57,12 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       case "useraccount" | "user_account" =>
         Some(ComponentFactory.authorizeUserAccountEntityOperation(action.name, action.request.toRecord, entityName)(using core.executionContext))
       case _ => None
+
+  override def authorize_unit_of_work(
+    authorization: UnitOfWorkAuthorization,
+    uow: org.goldenport.cncf.unitofwork.UnitOfWork
+  ): Option[Consequence[Unit]] =
+    None
 
   override protected def create_Components(params: ComponentCreate): Vector[Component] =
     Vector(UserAccountComponent())
