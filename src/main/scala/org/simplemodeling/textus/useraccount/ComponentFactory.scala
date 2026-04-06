@@ -45,7 +45,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       case "owner_or_manager" | "owner-or-manager" =>
         Some(ComponentFactory.authorizeOwnerOrManagerUserAccount(action.request.toRecord, access)(using core.executionContext))
       case "manager_only" | "manager-only" =>
-        Some(ComponentFactory.requireManagementPrivilege(using core.executionContext))
+        Some(OperationAccessPolicy.authorizeManagerOnly()(using core.executionContext))
       case _ => None
 
   override def authorize_operation_entity(
@@ -502,12 +502,6 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         response
 
 object ComponentFactory:
-  private val _management_capabilities = Set(
-    "content_manager",
-    "content_admin",
-    "application_content_manager"
-  )
-
   def authorizeOwnerOrManagerUserAccount(
     record: Record,
     access: CmlOperationAccess
@@ -620,10 +614,7 @@ object ComponentFactory:
       Consequence.failure(s"User account is not active in working set: ${id.print}")
 
   def requireManagementPrivilege(using ctx: ExecutionContext): Consequence[Unit] =
-    if (ctx.security.hasAnyCapability(_management_capabilities))
-      Consequence.unit
-    else
-      Consequence.failure("Management privilege is required.")
+    OperationAccessPolicy.authorizeManagerOnly()
 
   def currentLoggedInUserId(): Consequence[EntityId] =
     LoginWorkingSet.currentUserId()
