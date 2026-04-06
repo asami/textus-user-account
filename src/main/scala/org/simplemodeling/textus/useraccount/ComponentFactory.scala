@@ -16,6 +16,8 @@ import org.goldenport.cncf.CncfVersion
 import org.goldenport.cncf.context.ExecutionContext
 import org.goldenport.cncf.directive.Query
 import org.goldenport.cncf.entity.runtime.{EntityMemoryPolicy, EntityRuntimePlan, PartitionStrategy, WorkingSetDefinition}
+import org.goldenport.cncf.operation.CmlOperationAccess
+import org.goldenport.cncf.security.OperationAccessPolicy
 import org.goldenport.cncf.unitofwork.ExecUowM
 import org.simplemodeling.model.directive.{Condition, Update}
 
@@ -33,6 +35,26 @@ import org.simplemodeling.textus.useraccount.entity.update.{Credential => Creden
 class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePlanProvider:
   import UserAccountComponent.ManagementService
   import UserAccountComponent.UserService
+
+  override def authorize_operation_access(
+    action: org.goldenport.cncf.action.Action,
+    access: CmlOperationAccess,
+    core: ActionCall.Core
+  ): Option[Consequence[Unit]] =
+    access.policy.trim.toLowerCase(java.util.Locale.ROOT) match
+      case "owner_or_manager" | "owner-or-manager" =>
+        Some(ComponentFactory.authorizeOwnerOrManagerUserAccount(action.request.toRecord, access)(using core.executionContext))
+      case _ => None
+
+  override def authorize_operation_entity(
+    action: org.goldenport.cncf.action.Action,
+    entityName: String,
+    core: ActionCall.Core
+  ): Option[Consequence[Unit]] =
+    entityName.trim.toLowerCase(java.util.Locale.ROOT) match
+      case "useraccount" | "user_account" =>
+        Some(ComponentFactory.authorizeUserAccountEntityOperation(action.name, action.request.toRecord, entityName)(using core.executionContext))
+      case _ => None
 
   override protected def create_Components(params: ComponentCreate): Vector[Component] =
     Vector(UserAccountComponent())
@@ -140,6 +162,8 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       for
         password <- exec_from(requiredString(record, List("password")))
         userRecord = withDefaultStatus(record, defaultStatus)
+        email <- exec_from(requiredString(userRecord, List("email")))
+        _ <- requireEmailAvailable(email)
         status <- exec_from(requiredStatus(userRecord))
         _ <- exec_from(ComponentFactory.requireCreatableStatus(status))
         user <- exec_from(UserAccountCreate.createWithExecutionContextC(userRecord)(using executionContext))
@@ -264,6 +288,20 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         user <- exec_from(firstOrFailure(result.data, s"user account not found by email: $email"))
       yield
         user
+
+    private def requireEmailAvailable(email: String): ExecUowM[Unit] =
+      val query = UserAccountQuery(
+        id = Condition.any[EntityId],
+        name = Condition.any[Name],
+        title = Condition.any[String],
+        email = Condition.is(email),
+        status = Condition.any[UserAccountStatus]
+      )
+      for
+        result <- entity_search[UserAccountEntity](UserAccountQuery.collectionId, Query(query))
+        _ <- exec_from(ComponentFactory.requireEmailAvailable(email, result.data))
+      yield
+        ()
 
     private def credentialsForUser(userId: EntityId): ExecUowM[Vector[CredentialEntity]] =
       val query = CredentialQuery(
@@ -468,6 +506,54 @@ object ComponentFactory:
     "application_content_manager"
   )
 
+  def authorizeOwnerOrManagerUserAccount(
+    record: Record,
+    access: CmlOperationAccess
+  )(using ctx: ExecutionContext): Consequence[Unit] =
+    for
+      userId <- _requiredEntityId(record, access.target.toList ++ List("userAccountId", "user_account_id", "id"))
+      user <- org.goldenport.cncf.entity.EntityStore.standard().load[UserAccountEntity](userId).flatMap {
+        case Some(s) => Consequence.success(s)
+        case None => Consequence.failure(s"UserAccount not found: ${userId.print}")
+      }
+      _ <- OperationAccessPolicy.authorizeOwnerOrManager(user.toRecord())
+    yield
+      ()
+
+  def authorizeOwnerOrManagerUserAccountEntity(
+    record: Record,
+    entityName: String
+  )(using ctx: ExecutionContext): Consequence[Unit] =
+    authorizeOwnerOrManagerUserAccount(
+      record,
+      CmlOperationAccess(
+        policy = "owner_or_manager",
+        resource = Some(entityName),
+        target = Some("userAccountId")
+      )
+    )
+
+  def authorizeUserAccountEntityOperation(
+    operationName: String,
+    record: Record,
+    entityName: String
+  )(using ctx: ExecutionContext): Consequence[Unit] =
+    operationName match
+      case "createUserAccount" | "updateUserStatus" | "deleteUserAccount" | "listUserAccounts" =>
+        requireManagementPrivilege
+      case _ =>
+        authorizeOwnerOrManagerUserAccountEntity(record, entityName)
+
+  private def _requiredEntityId(
+    record: Record,
+    keys: Seq[String]
+  ): Consequence[EntityId] =
+    keys.iterator.map(record.getString).collectFirst {
+      case Some(s) => summon[org.goldenport.convert.ValueReader[EntityId]].readC(s)
+    }.getOrElse {
+      Consequence.failure(s"Entity id is required: ${keys.mkString("/")}")
+    }
+
   private val _creatable_statuses: Set[UserAccountStatus] = Set(
     UserAccountStatus.Provisional,
     UserAccountStatus.Registered,
@@ -515,6 +601,15 @@ object ComponentFactory:
       Consequence.unit
     else
       Consequence.failure("Promotion proof token must not be empty.")
+
+  def requireEmailAvailable(
+    email: String,
+    users: Vector[UserAccountEntity]
+  ): Consequence[Unit] =
+    if (users.isEmpty)
+      Consequence.unit
+    else
+      Consequence.failure(s"User account email is already registered: $email")
 
   def requireLoggedIn(id: EntityId): Consequence[Unit] =
     if (LoginWorkingSet.contains(id))

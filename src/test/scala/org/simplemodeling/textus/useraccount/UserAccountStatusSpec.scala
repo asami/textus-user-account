@@ -62,6 +62,18 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
       }
     }
 
+    "use manager-only entity authorization for management operations" in {
+      {
+        given ExecutionContext = ExecutionContext.test(SecurityContext.Privilege.User)
+        ComponentFactory.authorizeUserAccountEntityOperation("listUserAccounts", org.goldenport.record.Record(), "UserAccount").toOption.isDefined shouldBe false
+      }
+
+      {
+        given ExecutionContext = ExecutionContext.test(SecurityContext.Privilege.ApplicationContentManager)
+        ComponentFactory.authorizeUserAccountEntityOperation("listUserAccounts", org.goldenport.record.Record(), "UserAccount").toOption.isDefined shouldBe true
+      }
+    }
+
     "carry pagination controls into list query directives" in {
       val condition = org.simplemodeling.textus.useraccount.entity.query.UserAccount(
         id = Condition.any[EntityId],
@@ -77,6 +89,33 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
       )
       Query.offsetOf(query) shouldBe Some(20)
       Query.limitOf(query) shouldBe Some(10)
+    }
+
+    "reject duplicate account emails" in {
+      val duplicated = Vector(null.asInstanceOf[org.simplemodeling.textus.useraccount.entity.UserAccount])
+      ComponentFactory.requireEmailAvailable("alice@example.com", Vector.empty).toOption.isDefined shouldBe true
+      ComponentFactory.requireEmailAvailable("alice@example.com", duplicated).toOption.isDefined shouldBe false
+    }
+
+    "resolve current user id from the active working set" in {
+      ComponentFactory.currentLoggedInUserId().toOption.isDefined shouldBe false
+    }
+
+    "expose target entity metadata for changePassword" in {
+      val entityName = UserAccountComponent().operationDefinitions.find(_.name == "changePassword").flatMap(_.entityName)
+      entityName shouldBe Some("UserAccount")
+    }
+
+    "expose target entity metadata for getMyAccount" in {
+      val entityName = UserAccountComponent().operationDefinitions.find(_.name == "getMyAccount").flatMap(_.entityName)
+      entityName shouldBe Some("UserAccount")
+    }
+
+    "expose target entity metadata for management operations via service default" in {
+      val operationDefinitions = UserAccountComponent().operationDefinitions
+      operationDefinitions.find(_.name == "updateUserStatus").flatMap(_.entityName) shouldBe Some("UserAccount")
+      operationDefinitions.find(_.name == "deleteUserAccount").flatMap(_.entityName) shouldBe Some("UserAccount")
+      operationDefinitions.find(_.name == "listUserAccounts").flatMap(_.entityName) shouldBe Some("UserAccount")
     }
   }
 }

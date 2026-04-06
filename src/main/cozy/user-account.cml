@@ -479,6 +479,10 @@ Logout execution result.
 
 Replaces the current password with a new password.
 
+##### ENTITY
+
+UserAccount
+
 ##### PRECONDITION
 
 The current credential presented by the requester is valid.
@@ -505,6 +509,10 @@ Credential update result.
 
 Returns the current account projection for the requesting user.
 
+##### ENTITY
+
+UserAccount
+
 ##### PRECONDITION
 
 The requester is associated with a resolvable current account context.
@@ -526,6 +534,10 @@ Current account projection.
 ### DESCRIPTION
 
 Administrative operations for user account governance.
+
+### ENTITY
+
+UserAccount
 
 ### USE CASE
 
