@@ -44,6 +44,8 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     access.policy.trim.toLowerCase(java.util.Locale.ROOT) match
       case "owner_or_manager" | "owner-or-manager" =>
         Some(ComponentFactory.authorizeOwnerOrManagerUserAccount(action.request.toRecord, access)(using core.executionContext))
+      case "manager_only" | "manager-only" =>
+        Some(ComponentFactory.requireManagementPrivilege(using core.executionContext))
       case _ => None
 
   override def authorize_operation_entity(

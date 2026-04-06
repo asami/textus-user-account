@@ -117,5 +117,11 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
       operationDefinitions.find(_.name == "deleteUserAccount").flatMap(_.entityName) shouldBe Some("UserAccount")
       operationDefinitions.find(_.name == "listUserAccounts").flatMap(_.entityName) shouldBe Some("UserAccount")
     }
+
+    "expose default access metadata for management operations via service policy" in {
+      val operationDefinitions = UserAccountComponent().operationDefinitions
+      operationDefinitions.find(_.name == "listUserAccounts").flatMap(_.access.map(_.policy)) shouldBe Some("manager_only")
+      operationDefinitions.find(_.name == "updateUserStatus").flatMap(_.access.map(_.policy)) shouldBe Some("manager_only")
+    }
   }
 }

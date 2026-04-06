@@ -535,6 +535,12 @@ Current account projection.
 
 Administrative operations for user account governance.
 
+### ACCESS
+
+#### POLICY
+
+manager_only
+
 ### ENTITY
 
 UserAccount
