@@ -507,12 +507,8 @@ object ComponentFactory:
     access: CmlOperationAccess
   )(using ctx: ExecutionContext): Consequence[Unit] =
     for
-      userId <- _requiredEntityId(record, access.target.toList ++ List("userAccountId", "user_account_id", "id"))
-      user <- org.goldenport.cncf.entity.EntityStore.standard().load[UserAccountEntity](userId).flatMap {
-        case Some(s) => Consequence.success(s)
-        case None => Consequence.failure(s"UserAccount not found: ${userId.print}")
-      }
-      _ <- OperationAccessPolicy.authorizeOwnerOrManager(user.toRecord())
+      userId <- _resolveTargetUserId(record, access)
+      _ <- _authorize_owner_or_manager(userId)
     yield
       ()
 
@@ -549,6 +545,22 @@ object ComponentFactory:
     }.getOrElse {
       Consequence.failure(s"Entity id is required: ${keys.mkString("/")}")
     }
+
+  private def _resolveTargetUserId(
+    record: Record,
+    access: CmlOperationAccess
+  )(using ctx: ExecutionContext): Consequence[EntityId] =
+    _requiredEntityId(record, access.target.toList ++ List("userAccountId", "user_account_id", "id")) match
+      case s @ Consequence.Success(_) => s
+      case _ => currentLoggedInUserId()
+
+  private def _authorize_owner_or_manager(
+    userId: EntityId
+  )(using ctx: ExecutionContext): Consequence[Unit] =
+    OperationAccessPolicy.authorizeSimpleEntityOwnerOrManager(
+      userId,
+      id => org.goldenport.cncf.entity.EntityStore.standard().load[UserAccountEntity](id).map(_.map(_.toRecord()))
+    )
 
   private val _creatable_statuses: Set[UserAccountStatus] = Set(
     UserAccountStatus.Provisional,
