@@ -28,7 +28,7 @@ import org.simplemodeling.textus.useraccount.entity.query.{UserAccount => UserAc
 
 /*
  * @since   Apr.  6, 2026
- * @version Apr.  6, 2026
+ * @version Apr.  7, 2026
  * @author  ASAMI, Tomoharu
  */
 final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
@@ -141,6 +141,76 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
       val operationDefinitions = UserAccountComponent().operationDefinitions
       operationDefinitions.find(_.name == "listUserAccounts").flatMap(_.access.map(_.policy)) shouldBe Some("manager_only")
       operationDefinitions.find(_.name == "updateUserStatus").flatMap(_.access.map(_.policy)) shouldBe Some("manager_only")
+    }
+
+    "expose authentication access metadata for user self-service operations" in {
+      val operationDefinitions = UserAccountComponent().operationDefinitions
+      operationDefinitions.find(_.name == "provisionalRegistration").flatMap(_.access.map(_.policy)) shouldBe Some("anonymous_only")
+      operationDefinitions.find(_.name == "register").flatMap(_.access.map(_.policy)) shouldBe Some("anonymous_only")
+      operationDefinitions.find(_.name == "login").flatMap(_.access.map(_.policy)) shouldBe Some("anonymous_only")
+      operationDefinitions.find(_.name == "logout").flatMap(_.access.map(_.policy)) shouldBe Some("authenticated_only")
+      operationDefinitions.find(_.name == "changePassword").flatMap(_.access.map(_.policy)) shouldBe Some("authenticated_only")
+      operationDefinitions.find(_.name == "getMyAccount").flatMap(_.access.map(_.policy)) shouldBe Some("authenticated_only")
+    }
+
+    "enforce anonymous-only authorization during direct action execution" in {
+      val component = _component()
+      val fixture = _runtime_fixture()
+      val anonymousCtx = _execution_context(
+        fixture,
+        _security_context("anonymous", SecurityContext.Privilege.User, withAccessToken = false, extraAttributes = Map("anonymous" -> "true"))
+      )
+      val authenticatedCtx = _execution_context(
+        fixture,
+        _security_context("plain_user_principal", SecurityContext.Privilege.User)
+      )
+
+      _execute(
+        component,
+        anonymousCtx,
+        _dummy_action(
+          "User",
+          "register",
+          "email" -> "anon@example.com",
+          "password" -> "secret"
+        )
+      ).toOption.isDefined shouldBe true
+
+      _execute(
+        component,
+        authenticatedCtx,
+        _dummy_action(
+          "User",
+          "register",
+          "email" -> "auth@example.com",
+          "password" -> "secret"
+        )
+      ).toOption.isDefined shouldBe false
+    }
+
+    "enforce authenticated-only authorization during direct action execution" in {
+      val component = _component()
+      val fixture = _runtime_fixture()
+      val authenticatedCtx = _execution_context(
+        fixture,
+        _security_context("plain_user_principal", SecurityContext.Privilege.User)
+      )
+      val anonymousCtx = _execution_context(
+        fixture,
+        _security_context("anonymous", SecurityContext.Privilege.User, withAccessToken = false, extraAttributes = Map("anonymous" -> "true"))
+      )
+
+      _execute(
+        component,
+        authenticatedCtx,
+        _dummy_action("User", "logout")
+      ).toOption.isDefined shouldBe true
+
+      _execute(
+        component,
+        anonymousCtx,
+        _dummy_action("User", "logout")
+      ).toOption.isDefined shouldBe false
     }
 
     "enforce owner-or-manager authorization during direct action execution" in {
@@ -280,12 +350,17 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
 
   private def _security_context(
     principalId: String,
-    privilege: SecurityContext.Privilege
+    privilege: SecurityContext.Privilege,
+    withAccessToken: Boolean = true,
+    extraAttributes: Map[String, String] = Map.empty
   ): SecurityContext =
     SecurityContext(
       principal = new Principal {
         def id: PrincipalId = PrincipalId(principalId)
-        def attributes: Map[String, String] = privilege.attributes
+        def attributes: Map[String, String] =
+          privilege.attributes ++
+            (if (withAccessToken) Map("access_token" -> s"token-$principalId") else Map.empty) ++
+            extraAttributes
       },
       capabilities = privilege.capabilities,
       level = privilege.level

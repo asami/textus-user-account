@@ -348,6 +348,12 @@ If the registration input cannot be validated, the service rejects the request a
 
 Creates a provisional account from minimum registration information.
 
+##### ACCESS
+
+###### POLICY
+
+anonymous_only
+
 ##### PRECONDITION
 
 The request provides the minimum required registration input.
@@ -374,6 +380,12 @@ Result of provisional account creation.
 ##### DESCRIPTION
 
 Creates a regular user account through the standard registration flow.
+
+##### ACCESS
+
+###### POLICY
+
+anonymous_only
 
 ##### PRECONDITION
 
@@ -430,6 +442,12 @@ Result of provisional-to-formal promotion.
 
 Authenticates a user with identity and secret credentials.
 
+##### ACCESS
+
+###### POLICY
+
+anonymous_only
+
 ##### PRECONDITION
 
 The target account exists and can participate in authentication.
@@ -457,6 +475,12 @@ Authentication result and runtime response payload.
 
 Terminates the active session context for the user.
 
+##### ACCESS
+
+###### POLICY
+
+authenticated_only
+
 ##### PRECONDITION
 
 The target account is currently active in the session/runtime context.
@@ -478,6 +502,12 @@ Logout execution result.
 ##### DESCRIPTION
 
 Replaces the current password with a new password.
+
+##### ACCESS
+
+###### POLICY
+
+authenticated_only
 
 ##### ENTITY
 
@@ -508,6 +538,12 @@ Credential update result.
 ##### DESCRIPTION
 
 Returns the current account projection for the requesting user.
+
+##### ACCESS
+
+###### POLICY
+
+authenticated_only
 
 ##### ENTITY
 
