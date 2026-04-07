@@ -262,6 +262,61 @@ state via `updateUserStatus` or `deleteUserAccount`.
 - Persisted `Credential` keeps `passwordHash` and does not store raw passwords.
 - Privileged operations are separated in the `Management` service.
 
+### ACCOUNT_BOUNDARY
+
+`UserAccount` is intentionally narrow.
+It is the identity/account/security object, not the full personal profile.
+
+The current account core centers on:
+
+- `email`
+- `status`
+- inherited `SimpleEntity` quality/security metadata
+
+Natural future `UserAccount` attributes remain account/security-oriented:
+
+- email verification state or timestamp
+- suspension timestamp and suspension reason
+- last login timestamp
+- password changed timestamp
+- login identifier or external subject identifier
+- SMS-oriented security contact such as `phoneNumber` and `phoneVerifiedAt`
+
+### PROFILE_POLICY
+
+Personal profile information is intentionally separated from `UserAccount`.
+
+Fields such as:
+
+- birthday
+- gender
+- address
+- avatar
+- nickname
+- preference data
+
+belong to `UserProfile`-oriented models rather than to the account core.
+
+A generic `UserProfile` may be provided when needed.
+Applications may also define their own profile-like models.
+
+### ROLE_POLICY
+
+Application-specific role information is modeled outside this component as `UserRole` metadata and then operated inside this component through aggregate/view composition.
+
+`UserRole` is not just a string label.
+It may carry attributes and schema-aware metadata, so that application-specific role information and profile-like extensions can be represented without bloating `UserAccount`.
+
+### SIMPLEENTITY_POLICY
+
+Validity-period style attributes such as:
+
+- `activatedAt`
+- `deactivatedAt`
+- `expiresAt`
+
+are expected to be considered on the `SimpleEntity` side rather than as `UserAccount`-specific fields.
+
 ### DOC_USAGE
 
 Descriptions under `COMPONENT`, `SERVICE`, and `OPERATION` are intended to be reused for generated program comments and user-facing artifacts such as OpenAPI and Help text.
@@ -759,9 +814,14 @@ Core user profile and operational account state.
 
 ### ATTRIBUTE
 
-| name         | type     | multiplicity |
-|--------------+----------+--------------|
-| email        | string   | 1            |
+| name              | type      | multiplicity | constraints |
+|-------------------+-----------+--------------+-------------|
+| email             | string    | 1            |             |
+| emailVerifiedAt   | date-time | ?            |             |
+| phoneNumber       | string    | ?            | phone       |
+| phoneVerifiedAt   | date-time | ?            |             |
+| lastLoginAt       | date-time | ?            |             |
+| passwordChangedAt | date-time | ?            |             |
 
 ### StateMachine
 

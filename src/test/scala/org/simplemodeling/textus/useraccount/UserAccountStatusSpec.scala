@@ -99,6 +99,11 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
         name = Condition.any[Name],
         title = Condition.any[String],
         email = Condition.any[String],
+        emailVerifiedAt = Condition.any[String],
+        phoneNumber = Condition.any[String],
+        phoneVerifiedAt = Condition.any[String],
+        lastLoginAt = Condition.any[String],
+        passwordChangedAt = Condition.any[String],
         status = Condition.any[UserAccountStatus]
       )
       val query = Query.plan(
@@ -396,6 +401,11 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
       mediaAttributes = MediaAttributes(None, Vector.empty, Vector.empty, Vector.empty, Vector.empty),
       contextualAttribute = ContextualAttributes(),
       email = email,
+      emailVerifiedAt = None,
+      phoneNumber = None,
+      phoneVerifiedAt = None,
+      lastLoginAt = None,
+      passwordChangedAt = None,
       status = UserAccountStatus.Registered
     )
     EntityStore.standard().create(entity).map(_ => ())

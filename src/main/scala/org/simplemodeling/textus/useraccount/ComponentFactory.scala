@@ -2,6 +2,7 @@ package org.simplemodeling.textus.useraccount
 
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.time.Instant
 import scala.collection.concurrent.TrieMap
 
 import cats.syntax.all.*
@@ -29,7 +30,7 @@ import org.simplemodeling.textus.useraccount.entity.update.{Credential => Creden
 /*
  * @since   Mar. 23, 2026
  *  version Mar. 24, 2026
- * @version Apr.  6, 2026
+ * @version Apr.  7, 2026
  * @author  ASAMI, Tomoharu
  */
 class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePlanProvider:
@@ -223,6 +224,11 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           name = Condition.any[Name],
           title = Condition.any[String],
           email = email.map(Condition.is[String]).getOrElse(Condition.any[String]),
+          emailVerifiedAt = Condition.any[String],
+          phoneNumber = Condition.any[String],
+          phoneVerifiedAt = Condition.any[String],
+          lastLoginAt = Condition.any[String],
+          passwordChangedAt = Condition.any[String],
           status = status.map(Condition.is[UserAccountStatus]).getOrElse(Condition.any[UserAccountStatus])
         )
         query = Query.plan(condition, limit = limit, offset = offset)
@@ -237,6 +243,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         user <- userByEmail(email)
         _ <- exec_from(ComponentFactory.requireAuthenticatable(user.status))
         credential <- credentialByUserAndPassword(user.id, password)
+        _ <- exec_from(updateLastLoginAt(user.id))
         _ <- exec_from(addLoggedInUser(user))
       yield
         OperationResponse(
@@ -263,6 +270,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         credential <- credentialByUserAndPassword(userId, current)
         patch <- exec_from(CredentialUpdate.createC(Record.dataAuto("passwordHash" -> passwordHash(next))))
         _ <- entity_update(credential.id, patch)
+        _ <- exec_from(updatePasswordChangedAt(userId))
       yield
         OperationResponse.void
 
@@ -289,6 +297,11 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         name = Condition.any[Name],
         title = Condition.any[String],
         email = Condition.is(email),
+        emailVerifiedAt = Condition.any[String],
+        phoneNumber = Condition.any[String],
+        phoneVerifiedAt = Condition.any[String],
+        lastLoginAt = Condition.any[String],
+        passwordChangedAt = Condition.any[String],
         status = Condition.any[UserAccountStatus]
       )
       for
@@ -303,6 +316,11 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         name = Condition.any[Name],
         title = Condition.any[String],
         email = Condition.is(email),
+        emailVerifiedAt = Condition.any[String],
+        phoneNumber = Condition.any[String],
+        phoneVerifiedAt = Condition.any[String],
+        lastLoginAt = Condition.any[String],
+        passwordChangedAt = Condition.any[String],
         status = Condition.any[UserAccountStatus]
       )
       for
@@ -342,6 +360,18 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       credentials.foldLeft(exec_pure(())) { (z, credential) =>
         z.flatMap(_ => entity_delete(credential.id))
       }
+
+    private def updateLastLoginAt(userId: EntityId): Consequence[Unit] =
+      val patch = UserAccountUpdate.createC(
+        Record.dataAuto("lastLoginAt" -> Instant.now.toString)
+      )
+      patch.flatMap(entity_update(userId, _).value.foldMap(executionContext.runtime.unitOfWorkInterpreter)).map(_ => ())
+
+    private def updatePasswordChangedAt(userId: EntityId): Consequence[Unit] =
+      val patch = UserAccountUpdate.createC(
+        Record.dataAuto("passwordChangedAt" -> Instant.now.toString)
+      )
+      patch.flatMap(entity_update(userId, _).value.foldMap(executionContext.runtime.unitOfWorkInterpreter)).map(_ => ())
 
     private def passwordHash(password: String): String =
       val digest = MessageDigest.getInstance("SHA-256")

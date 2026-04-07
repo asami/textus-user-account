@@ -162,7 +162,110 @@ Operation → ActionCall → Task → Job
 
 ---
 
-# 11. Future Extensions
+# 11. UserAccount Boundary And Attribute Policy
+
+`UserAccount` is kept narrow on purpose.
+
+It is the account/identity/security object, not the full personal profile.
+
+Current `UserAccount` core attributes are:
+
+- `email`
+- `status`
+- inherited `SimpleEntity` attributes and quality/security metadata
+
+The following remain in-scope for `UserAccount` as account/security attributes:
+
+- email verification state or timestamp
+- suspension timestamp and suspension reason
+- last login timestamp
+- password changed timestamp
+- login identifier or external subject identifier
+- SMS-oriented security contact
+  - `phoneNumber`
+  - `phoneVerifiedAt`
+
+These attributes are currently recorded as target design, but not yet emitted into the executable model.
+
+Reason:
+
+- the current generator does not safely handle these optional account/security extensions on `UserAccount`
+- therefore the boundary decision is fixed first, and executable attribute expansion remains pending generator support
+
+The following are intentionally out of scope for `UserAccount`:
+
+- birthday
+- gender
+- address
+- avatar
+- nickname
+- personal preference data
+
+Those belong to profile-oriented models, not the account core.
+
+Validity-period style attributes such as:
+
+- `activatedAt`
+- `deactivatedAt`
+- `expiresAt`
+
+should be considered on the `SimpleEntity` side rather than as `UserAccount`-specific fields.
+
+---
+
+# 12. UserProfile Policy
+
+`UserProfile` is an optional companion model.
+
+It should provide reusable generic profile information that can be attached to a user when needed, while keeping `UserAccount` itself small.
+
+This means:
+
+- `UserAccount` remains the identity/account/security base
+- `UserProfile` holds generic personal/profile information
+- applications may choose not to use `UserProfile`
+
+Application-specific profile-like structures are also allowed, but they should not be forced into `UserAccount`.
+
+---
+
+# 13. UserRole Policy
+
+`UserRole` is treated as an application-oriented extension point.
+
+The role definition itself should be defined outside `textus-user-account`.
+`textus-user-account` should be able to operate it internally through aggregate/view composition.
+
+The intended shape is:
+
+- external metadata defines role types
+- that metadata may include schema information
+- `textus-user-account` manages runtime/use-time composition
+- aggregate and view join `UserAccount` with role information
+
+`UserRole` is not just a string label.
+It may carry attributes and can therefore represent application-specific information.
+
+This also means application-specific profile-like data may be modeled as a kind of `UserRole` family object.
+
+---
+
+# 14. Security Direction
+
+Authentication and authorization are separated from profile concerns.
+
+The current security direction is:
+
+- `UserAccount` carries account/security core information
+- `UserRole` provides application-specific role/capability context
+- `UserProfile` provides profile-oriented information
+- SMS is treated as a security/contact extension, not as generic profile data
+
+This keeps the model usable while still allowing stronger security requirements than a typical ad-hoc web application account model.
+
+---
+
+# 15. Future Extensions
 
 - credential separation
 - session management
