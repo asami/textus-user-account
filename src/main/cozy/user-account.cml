@@ -588,6 +588,78 @@ Current credential and new credential material.
 
 Credential update result.
 
+#### verifyMyEmail
+
+##### DESCRIPTION
+
+Marks the current account email as verified after successful proof validation.
+
+##### ACCESS
+
+###### POLICY
+
+authenticated_only
+
+##### ENTITY
+
+UserAccount
+
+##### PRECONDITION
+
+The requester is associated with a resolvable current account context and presents valid email-verification proof.
+
+##### POSTCONDITION
+
+The current account records an email verification timestamp.
+
+##### RULE
+
+- Verification proof is request-only input and must not be persisted as plain text.
+
+##### IN
+
+Current account identity context and email verification proof.
+
+##### OUT
+
+Email verification result.
+
+#### verifyMyPhone
+
+##### DESCRIPTION
+
+Registers or confirms the current account SMS contact and records phone verification time.
+
+##### ACCESS
+
+###### POLICY
+
+authenticated_only
+
+##### ENTITY
+
+UserAccount
+
+##### PRECONDITION
+
+The requester is associated with a resolvable current account context and presents valid phone-verification proof.
+
+##### POSTCONDITION
+
+The current account records the confirmed phone number and phone verification timestamp.
+
+##### RULE
+
+- Verification proof is request-only input and must not be persisted as plain text.
+
+##### IN
+
+Current account identity context, phone number, and phone verification proof.
+
+##### OUT
+
+Phone verification result.
+
 #### getMyAccount
 
 ##### DESCRIPTION
@@ -973,6 +1045,33 @@ Command to replace an existing password with a new one.
 | currentPassword  | string   | 1            |
 | newPassword      | string   | 1            |
 
+## UserVerifyMyEmail
+
+### DESCRIPTION
+
+Command to confirm the current account email address.
+
+### ATTRIBUTE
+
+| name          | type     | multiplicity |
+|---------------+----------+--------------|
+| userAccountId | entityid | 1            |
+| proofToken    | string   | 1            |
+
+## UserVerifyMyPhone
+
+### DESCRIPTION
+
+Command to confirm the current account SMS contact.
+
+### ATTRIBUTE
+
+| name          | type     | multiplicity |
+|---------------+----------+--------------|
+| userAccountId | entityid | 1            |
+| phoneNumber   | string   | 1            |
+| proofToken    | string   | 1            |
+
 ## AdminCreateUserAccount
 
 ### DESCRIPTION
@@ -1110,6 +1209,28 @@ UserChangePassword
 
 ### OUTPUT
 UserChangePasswordResult
+
+## verifyMyEmail
+
+### TYPE
+COMMAND
+
+### INPUT
+UserVerifyMyEmail
+
+### OUTPUT
+UserVerifyMyEmailResult
+
+## verifyMyPhone
+
+### TYPE
+COMMAND
+
+### INPUT
+UserVerifyMyPhone
+
+### OUTPUT
+UserVerifyMyPhoneResult
 
 ## getMyAccount
 

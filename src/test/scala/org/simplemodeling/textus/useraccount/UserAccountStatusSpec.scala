@@ -5,6 +5,7 @@ import org.goldenport.configuration.{Configuration, ConfigurationTrace, Resolved
 import org.goldenport.cncf.action.{Action, ActionCall, ProcedureActionCall}
 import org.goldenport.cncf.datastore.DataStore
 import org.goldenport.cncf.entity.EntityStore
+import org.goldenport.cncf.entity.EntityQuery
 import org.goldenport.cncf.event.EventEngine
 import org.goldenport.cncf.component.{Component, ComponentCreate, ComponentOrigin}
 import org.goldenport.cncf.cli.RunMode
@@ -61,6 +62,13 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
 
       ComponentFactory.requireAuthenticatable(UserAccountStatus.Provisional).toOption.isDefined shouldBe false
       ComponentFactory.requireAuthenticatable(UserAccountStatus.Suspended).toOption.isDefined shouldBe false
+    }
+
+    "map account status into common activation status" in {
+      ComponentFactory.activationStatusForUserAccountStatus(UserAccountStatus.Provisional) shouldBe org.simplemodeling.model.statemachine.ActivationStatus.Inactive
+      ComponentFactory.activationStatusForUserAccountStatus(UserAccountStatus.Registered) shouldBe org.simplemodeling.model.statemachine.ActivationStatus.Active
+      ComponentFactory.activationStatusForUserAccountStatus(UserAccountStatus.Formal) shouldBe org.simplemodeling.model.statemachine.ActivationStatus.Active
+      ComponentFactory.activationStatusForUserAccountStatus(UserAccountStatus.Suspended) shouldBe org.simplemodeling.model.statemachine.ActivationStatus.Deactivated
     }
 
     "require a non-empty promotion proof token" in {
@@ -155,6 +163,8 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
       operationDefinitions.find(_.name == "login").flatMap(_.access.map(_.policy)) shouldBe Some("anonymous_only")
       operationDefinitions.find(_.name == "logout").flatMap(_.access.map(_.policy)) shouldBe Some("authenticated_only")
       operationDefinitions.find(_.name == "changePassword").flatMap(_.access.map(_.policy)) shouldBe Some("authenticated_only")
+      operationDefinitions.find(_.name == "verifyMyEmail").flatMap(_.access.map(_.policy)) shouldBe Some("authenticated_only")
+      operationDefinitions.find(_.name == "verifyMyPhone").flatMap(_.access.map(_.policy)) shouldBe Some("authenticated_only")
       operationDefinitions.find(_.name == "getMyAccount").flatMap(_.access.map(_.policy)) shouldBe Some("authenticated_only")
     }
 
@@ -274,6 +284,46 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
         userCtx,
         _dummy_action("Management", "listUserAccounts")
       ).toOption.isDefined shouldBe false
+    }
+
+    "accept self-service verification actions for the current user" in {
+      val component = _component()
+      val fixture = _runtime_fixture()
+      val userId = EntityId("test", s"verified_${System.nanoTime}", UserAccountQuery.collectionId)
+      val ownerCtx = _execution_context(fixture, _security_context(userId.print, SecurityContext.Privilege.User))
+      given ExecutionContext = ownerCtx
+      _seed_user_account(userId, "verified_owner_principal", "verified@example.com").toOption.isDefined shouldBe true
+
+      _execute(
+        component,
+        ownerCtx,
+        _dummy_action(
+          "User",
+          "verifyMyEmail",
+          "userAccountId" -> userId.print,
+          "proofToken" -> "email-proof"
+        )
+      ).toOption.isDefined shouldBe true
+
+      _execute(
+        component,
+        ownerCtx,
+        _dummy_action(
+          "User",
+          "verifyMyPhone",
+          "userAccountId" -> userId.print,
+          "phoneNumber" -> "09012345678",
+          "proofToken" -> "phone-proof"
+        )
+      ).toOption.isDefined shouldBe true
+    }
+
+    "build status update fields with synchronized activation status" in {
+      val changes = ComponentFactory.statusUpdateFields(UserAccountStatus.Suspended)
+      changes.getInt("status") shouldBe Some(UserAccountStatus.Suspended.dbValue)
+      changes
+        .getRecord("resource_attributes")
+        .flatMap(_.getInt("activation_status")) shouldBe Some(org.simplemodeling.model.statemachine.ActivationStatus.Deactivated.dbValue)
     }
   }
 

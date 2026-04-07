@@ -21,11 +21,13 @@ import org.goldenport.cncf.operation.CmlOperationAccess
 import org.goldenport.cncf.security.OperationAccessPolicy
 import org.goldenport.cncf.unitofwork.{ExecUowM, UnitOfWorkAuthorization}
 import org.simplemodeling.model.directive.{Condition, Update}
+import org.simplemodeling.model.statemachine.ActivationStatus
+import org.simplemodeling.model.value.ResourceAttributes
 
 import org.simplemodeling.textus.useraccount.entity.{Credential => CredentialEntity, UserAccount => UserAccountEntity}
 import org.simplemodeling.textus.useraccount.entity.create.{Credential => CredentialCreate, UserAccount => UserAccountCreate}
 import org.simplemodeling.textus.useraccount.entity.query.{Credential => CredentialQuery, UserAccount => UserAccountQuery}
-import org.simplemodeling.textus.useraccount.entity.update.{Credential => CredentialUpdate, UserAccount => UserAccountUpdate}
+import org.simplemodeling.textus.useraccount.entity.update.{Credential => CredentialUpdate}
 
 /*
  * @since   Mar. 23, 2026
@@ -130,6 +132,18 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     ): UserService.ChangePasswordActionCall =
       ChangePasswordActionCallImpl(core, action)
 
+    override def createVerifyMyEmailActionCall(
+      core: ActionCall.Core,
+      action: UserService.VerifyMyEmailCommand
+    ): UserService.VerifyMyEmailActionCall =
+      VerifyMyEmailActionCallImpl(core, action)
+
+    override def createVerifyMyPhoneActionCall(
+      core: ActionCall.Core,
+      action: UserService.VerifyMyPhoneCommand
+    ): UserService.VerifyMyPhoneActionCall =
+      VerifyMyPhoneActionCallImpl(core, action)
+
     override def createGetMyAccountActionCall(
       core: ActionCall.Core,
       action: UserService.GetMyAccountQuery
@@ -175,13 +189,15 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         _ <- requireEmailAvailable(email)
         status <- exec_from(requiredStatus(userRecord))
         _ <- exec_from(ComponentFactory.requireCreatableStatus(status))
-        user <- exec_from(UserAccountCreate.createWithExecutionContextC(userRecord)(using executionContext))
+        user0 <- exec_from(UserAccountCreate.createWithExecutionContextC(userRecord)(using executionContext))
+        user = user0.withResourceAttributes(ResourceAttributes(activationStatus = ComponentFactory.activationStatusForUserAccountStatus(status)))
         created <- entity_create(user)
         credentialRecord = Record.dataAuto(
           "userAccountId" -> created.id,
           "passwordHash" -> passwordHash(password)
         )
-        credential <- exec_from(CredentialCreate.createWithExecutionContextC(credentialRecord)(using executionContext))
+        credential0 <- exec_from(CredentialCreate.createWithExecutionContextC(credentialRecord)(using executionContext))
+        credential = credential0.withResourceAttributes(ResourceAttributes(activationStatus = ActivationStatus.Active))
         _ <- entity_create(credential)
       yield
         OperationResponse(created.toRecord)
@@ -197,9 +213,10 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           case Some(s) => exec_from(ComponentFactory.parseStatus(s))
           case None => exec_from(requiredStatus(record))
         _ <- exec_from(ComponentFactory.requireTransition(user.status, targetStatus))
-        patchRecord = Record.dataAuto("status" -> targetStatus.value)
-        patch <- exec_from(UserAccountUpdate.createC(patchRecord))
-        _ <- entity_update(userId, patch)
+        _ <- exec_from(_update_user_account_fields(
+          userId,
+          ComponentFactory.statusUpdateFields(targetStatus)
+        ))
       yield
         OperationResponse.void
 
@@ -243,7 +260,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         user <- userByEmail(email)
         _ <- exec_from(ComponentFactory.requireAuthenticatable(user.status))
         credential <- credentialByUserAndPassword(user.id, password)
-        _ <- exec_from(updateLastLoginAt(user.id))
+        _ <- updateLastLoginAt(user.id)
         _ <- exec_from(addLoggedInUser(user))
       yield
         OperationResponse(
@@ -270,7 +287,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         credential <- credentialByUserAndPassword(userId, current)
         patch <- exec_from(CredentialUpdate.createC(Record.dataAuto("passwordHash" -> passwordHash(next))))
         _ <- entity_update(credential.id, patch)
-        _ <- exec_from(updatePasswordChangedAt(userId))
+        _ <- updatePasswordChangedAt(userId)
       yield
         OperationResponse.void
 
@@ -280,6 +297,25 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         user <- entity_load[UserAccountEntity](userId)
       yield
         OperationResponse(user.toRecord())
+
+    protected final def verifyMyEmail(record: Record): ExecUowM[OperationResponse] =
+      for
+        userId <- exec_from(currentUserId(record))
+        proofToken <- exec_from(requiredString(record, List("proofToken", "proof_token")))
+        _ <- exec_from(ComponentFactory.requirePromotionProofToken(proofToken))
+        _ <- updateEmailVerifiedAt(userId)
+      yield
+        OperationResponse.void
+
+    protected final def verifyMyPhone(record: Record): ExecUowM[OperationResponse] =
+      for
+        userId <- exec_from(currentUserId(record))
+        phoneNumber <- exec_from(requiredString(record, List("phoneNumber", "phone_number")))
+        proofToken <- exec_from(requiredString(record, List("proofToken", "proof_token")))
+        _ <- exec_from(ComponentFactory.requirePromotionProofToken(proofToken))
+        _ <- updatePhoneVerification(userId, phoneNumber)
+      yield
+        OperationResponse.void
 
     protected final def requireManagementPrivilege(): Consequence[Unit] =
       ComponentFactory.requireManagementPrivilege(using executionContext)
@@ -361,17 +397,56 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         z.flatMap(_ => entity_delete(credential.id))
       }
 
-    private def updateLastLoginAt(userId: EntityId): Consequence[Unit] =
-      val patch = UserAccountUpdate.createC(
-        Record.dataAuto("lastLoginAt" -> Instant.now.toString)
-      )
-      patch.flatMap(entity_update(userId, _).value.foldMap(executionContext.runtime.unitOfWorkInterpreter)).map(_ => ())
+    private def updateLastLoginAt(userId: EntityId): ExecUowM[Unit] =
+      for
+        _ <- exec_from(_update_user_account_fields(
+          userId,
+          Record.dataAuto("last_login_at" -> Instant.now.toString)
+        ))
+      yield
+        ()
 
-    private def updatePasswordChangedAt(userId: EntityId): Consequence[Unit] =
-      val patch = UserAccountUpdate.createC(
-        Record.dataAuto("passwordChangedAt" -> Instant.now.toString)
-      )
-      patch.flatMap(entity_update(userId, _).value.foldMap(executionContext.runtime.unitOfWorkInterpreter)).map(_ => ())
+    private def updatePasswordChangedAt(userId: EntityId): ExecUowM[Unit] =
+      for
+        _ <- exec_from(_update_user_account_fields(
+          userId,
+          Record.dataAuto("password_changed_at" -> Instant.now.toString)
+        ))
+      yield
+        ()
+
+    private def updateEmailVerifiedAt(userId: EntityId): ExecUowM[Unit] =
+      for
+        _ <- exec_from(_update_user_account_fields(
+          userId,
+          Record.dataAuto("email_verified_at" -> Instant.now.toString)
+        ))
+      yield
+        ()
+
+    private def updatePhoneVerification(userId: EntityId, phoneNumber: String): ExecUowM[Unit] =
+      for
+        _ <- exec_from(_update_user_account_fields(
+          userId,
+          Record.dataAuto(
+            "phone_number" -> phoneNumber,
+            "phone_verified_at" -> Instant.now.toString
+          )
+        ))
+      yield
+        ()
+
+    private def _update_user_account_fields(
+      userId: EntityId,
+      changes: Record
+    ): Consequence[Unit] =
+      for
+        cid <- executionContext.entityStoreSpace.dataStoreCollection(userId)
+        eid <- executionContext.entityStoreSpace.dataStoreEntryId(userId)
+        ds <- executionContext.dataStoreSpace.dataStore(cid)
+        _ <- ds.update(cid, eid, changes)(using executionContext)
+      yield
+        ()
 
     private def passwordHash(password: String): String =
       val digest = MessageDigest.getInstance("SHA-256")
@@ -492,6 +567,20 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
   ) extends UserService.GetMyAccountActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       getMyAccount(action.record)
+
+  private final case class VerifyMyEmailActionCallImpl(
+    core: ActionCall.Core,
+    override val action: UserService.VerifyMyEmailCommand
+  ) extends UserService.VerifyMyEmailActionCall, UserAccountActionSupport:
+    protected def build_Program: ExecUowM[OperationResponse] =
+      verifyMyEmail(action.record)
+
+  private final case class VerifyMyPhoneActionCallImpl(
+    core: ActionCall.Core,
+    override val action: UserService.VerifyMyPhoneCommand
+  ) extends UserService.VerifyMyPhoneActionCall, UserAccountActionSupport:
+    protected def build_Program: ExecUowM[OperationResponse] =
+      verifyMyPhone(action.record)
 
   private final case class ManagementCreateUserAccountActionCallImpl(
     core: ActionCall.Core,
@@ -616,6 +705,26 @@ object ComponentFactory:
     UserAccountStatus.Formal -> Set(UserAccountStatus.Suspended),
     UserAccountStatus.Suspended -> Set(UserAccountStatus.Registered)
   )
+
+  def activationStatusForUserAccountStatus(
+    status: UserAccountStatus
+  ): ActivationStatus =
+    status match
+      case UserAccountStatus.Provisional => ActivationStatus.Inactive
+      case UserAccountStatus.Registered => ActivationStatus.Active
+      case UserAccountStatus.Formal => ActivationStatus.Active
+      case UserAccountStatus.Suspended => ActivationStatus.Deactivated
+
+  def statusUpdateFields(
+    status: UserAccountStatus
+  ): Record =
+    val activationStatus = activationStatusForUserAccountStatus(status)
+    Record.dataAuto(
+      "status" -> status.dbValue,
+      "resource_attributes" -> Record.dataAuto(
+        "activation_status" -> activationStatus.dbValue
+      )
+    )
 
   def parseStatus(p: String): Consequence[UserAccountStatus] =
     UserAccountStatus.parse(p)
