@@ -140,7 +140,12 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       given ExecutionContext = fixture.executionContext
       val ownerPrincipalId = "integration_owner"
       val userId = _user_account_id("login_only")
-      _seed_user_account(userId, ownerPrincipalId, "integration@example.com").toOption.isDefined shouldBe true
+      _seed_user_account(
+        userId,
+        ownerPrincipalId,
+        "integration@example.com",
+        phoneNumber = Some("09012345678")
+      ).toOption.isDefined shouldBe true
       _seed_credential(userId, ownerPrincipalId, "secret").toOption.isDefined shouldBe true
 
       val anonymousCtx = _with_security(
@@ -374,29 +379,16 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       given ExecutionContext = fixture.executionContext
       val ownerPrincipalId = "integration_owner"
       val userId = _user_account_id("integration")
-      _seed_user_account(userId, ownerPrincipalId, "integration@example.com").toOption.isDefined shouldBe true
+      _seed_user_account(
+        userId,
+        ownerPrincipalId,
+        "integration@example.com",
+        phoneNumber = Some("09012345678")
+      ).toOption.isDefined shouldBe true
       _seed_credential(userId, ownerPrincipalId, "secret").toOption.isDefined shouldBe true
 
-      val anonymousCtx = _with_security(
-        fixture,
-        ownerPrincipalId,
-        withAccessToken = false,
-        extraAttributes = Map("anonymous" -> "true")
-      )
-      _execute_request(
-        component,
-        anonymousCtx,
-        Request.ofService(
-          "User",
-          "login",
-          properties = List(
-            Property("email", "integration@example.com", None),
-            Property("password", "secret", None)
-          )
-        )
-      ).toOption.isDefined shouldBe true
-
-      val authenticatedCtx = _with_security(fixture, ownerPrincipalId)
+      val authenticatedCtx = _with_security(fixture, userId.print)
+      ComponentFactory.addLoggedInUserForTest(userId)(using authenticatedCtx).toOption.isDefined shouldBe true
       _execute_request(
         component,
         authenticatedCtx,
@@ -422,16 +414,106 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         )
       ).toOption.isDefined shouldBe true
 
-      val cid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(userId).toOption.get
-      val dsid = summon[ExecutionContext].entityStoreSpace.dataStoreEntryId(userId).toOption.get
-      val datastore = summon[ExecutionContext].dataStoreSpace.dataStore(cid).toOption.get
+      val cid = fixture.executionContext.entityStoreSpace.dataStoreCollection(userId).toOption.get
+      val dsid = fixture.executionContext.entityStoreSpace.dataStoreEntryId(userId).toOption.get
+      val datastore = fixture.executionContext.dataStoreSpace.dataStore(cid).toOption.get
       val stored = datastore.load(cid, dsid).toOption.flatten
       withClue(s"stored=${stored.map(_.fields.map(f => f.key -> f.value).toVector)}") {
         stored.flatMap(_.getAny("email_verified_at")) should not be empty
         stored.flatMap(_.getAny("phone_verified_at")) should not be empty
         stored.flatMap(_.getString("phone_number")) shouldBe Some("09012345678")
-        stored.flatMap(_.getAny("last_login_at")) should not be empty
+        stored.flatMap(_.getAny("last_login_at")) shouldBe empty
       }
+    }
+
+    "reject email verification when the current account email is already verified" in {
+      val fixture = _fixture()
+      val component = _component()
+      val userId = _user_account_id("already_verified_email")
+      val ownerPrincipalId = "already_verified_owner"
+      given ExecutionContext = fixture.contextFor(_security_context(ownerPrincipalId))
+      _seed_user_account(
+        userId,
+        ownerPrincipalId,
+        "already-verified-email@example.com",
+        emailVerifiedAt = Some("2026-04-08T00:00:00Z")
+      ).toOption.isDefined shouldBe true
+
+      val authenticatedCtx = _with_security(fixture, userId.print)
+      ComponentFactory.addLoggedInUserForTest(userId)(using authenticatedCtx).toOption.isDefined shouldBe true
+
+      val result = _execute_request(
+        component,
+        authenticatedCtx,
+        Request.ofService(
+          "User",
+          "verifyMyEmail",
+          properties = List(
+            Property("proofToken", "email-proof", None)
+          )
+        )
+      )
+      result.toOption shouldBe empty
+      result.toString.toLowerCase(java.util.Locale.ROOT) should include("already verified")
+    }
+
+    "reject phone verification when the current account does not have a stored phone number" in {
+      val fixture = _fixture()
+      val component = _component()
+      val userId = _user_account_id("missing_phone")
+      val ownerPrincipalId = "missing_phone_owner"
+      given ExecutionContext = fixture.contextFor(_security_context(ownerPrincipalId))
+      _seed_user_account(userId, ownerPrincipalId, "missing-phone@example.com").toOption.isDefined shouldBe true
+
+      val authenticatedCtx = _with_security(fixture, userId.print)
+      ComponentFactory.addLoggedInUserForTest(userId)(using authenticatedCtx).toOption.isDefined shouldBe true
+
+      val result = _execute_request(
+        component,
+        authenticatedCtx,
+        Request.ofService(
+          "User",
+          "verifyMyPhone",
+          properties = List(
+            Property("phoneNumber", "09012345678", None),
+            Property("proofToken", "phone-proof", None)
+          )
+        )
+      )
+      result.toOption shouldBe empty
+      result.toString.toLowerCase(java.util.Locale.ROOT) should include("does not have an sms contact")
+    }
+
+    "reject phone verification when the requested phone number does not match the current account" in {
+      val fixture = _fixture()
+      val component = _component()
+      val userId = _user_account_id("phone_mismatch")
+      val ownerPrincipalId = "phone_mismatch_owner"
+      given ExecutionContext = fixture.contextFor(_security_context(ownerPrincipalId))
+      _seed_user_account(
+        userId,
+        ownerPrincipalId,
+        "phone-mismatch@example.com",
+        phoneNumber = Some("09000000000")
+      ).toOption.isDefined shouldBe true
+
+      val authenticatedCtx = _with_security(fixture, userId.print)
+      ComponentFactory.addLoggedInUserForTest(userId)(using authenticatedCtx).toOption.isDefined shouldBe true
+
+      val result = _execute_request(
+        component,
+        authenticatedCtx,
+        Request.ofService(
+          "User",
+          "verifyMyPhone",
+          properties = List(
+            Property("phoneNumber", "09012345678", None),
+            Property("proofToken", "phone-proof", None)
+          )
+        )
+      )
+      result.toOption shouldBe empty
+      result.toString.toLowerCase(java.util.Locale.ROOT) should include("does not match")
     }
 
     "persist suspension details through actual status update operations" in {
@@ -586,7 +668,10 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
   private def _seed_user_account(
     id: EntityId,
     ownerPrincipalId: String,
-    email: String
+    email: String,
+    emailVerifiedAt: Option[String] = None,
+    phoneNumber: Option[String] = None,
+    phoneVerifiedAt: Option[String] = None
   )(using ExecutionContext) = {
     val principal = ObjectId(Identifier(ownerPrincipalId))
     val rights = SecurityAttributes.Rights(
@@ -613,9 +698,9 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       mediaAttributes = MediaAttributes(None, Vector.empty, Vector.empty, Vector.empty, Vector.empty),
       contextualAttribute = ContextualAttributes(),
       email = email,
-      emailVerifiedAt = None,
-      phoneNumber = None,
-      phoneVerifiedAt = None,
+      emailVerifiedAt = emailVerifiedAt,
+      phoneNumber = phoneNumber,
+      phoneVerifiedAt = phoneVerifiedAt,
       lastLoginAt = None,
       passwordChangedAt = None,
       suspendedAt = None,

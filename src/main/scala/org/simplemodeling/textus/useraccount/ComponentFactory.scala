@@ -307,8 +307,10 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     protected final def verifyMyEmail(record: Record): ExecUowM[OperationResponse] =
       for
         userId <- exec_from(currentUserId(record))
+        user <- rawUserAccountRecord(userId)
         proofToken <- exec_from(requiredString(record, List("proofToken", "proof_token")))
         _ <- exec_from(ComponentFactory.requirePromotionProofToken(proofToken))
+        _ <- exec_from(ComponentFactory.requireEmailVerificationPending(user))
         _ <- updateEmailVerifiedAt(userId)
       yield
         OperationResponse.void
@@ -316,9 +318,11 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     protected final def verifyMyPhone(record: Record): ExecUowM[OperationResponse] =
       for
         userId <- exec_from(currentUserId(record))
+        user <- rawUserAccountRecord(userId)
         phoneNumber <- exec_from(requiredString(record, List("phoneNumber", "phone_number")))
         proofToken <- exec_from(requiredString(record, List("proofToken", "proof_token")))
         _ <- exec_from(ComponentFactory.requirePromotionProofToken(proofToken))
+        _ <- exec_from(ComponentFactory.requirePhoneVerificationPending(user, phoneNumber))
         _ <- updatePhoneVerification(userId, phoneNumber)
       yield
         OperationResponse.void
@@ -410,6 +414,22 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         )
       yield
         credentials
+
+    private def rawUserAccountRecord(userId: EntityId): ExecUowM[Record] =
+      exec_from {
+        for
+          cid <- executionContext.entityStoreSpace.dataStoreCollection(UserAccountQuery.collectionId)
+          ds <- executionContext.dataStoreSpace.dataStore(cid)
+          recordOption <- ds.load(
+            cid,
+            org.goldenport.cncf.datastore.DataStore.EntryId(userId)
+          )(using executionContext)
+          record <- recordOption match
+            case Some(x) => Consequence.success(x)
+            case None => Consequence.failure(s"User account not found: ${userId.print}")
+        yield
+          record
+      }
 
     private def rawRecords(collectionId: org.simplemodeling.model.datatype.EntityCollectionId): ExecUowM[Vector[Record]] =
       exec_from {
@@ -831,6 +851,25 @@ object ComponentFactory:
     else
       Consequence.failure("Promotion proof token must not be empty.")
 
+  def requireEmailVerificationPending(user: Record): Consequence[Unit] =
+    user.getString("email_verified_at") match
+      case Some(v) if v.trim.nonEmpty => Consequence.failure("Current account email is already verified.")
+      case _ => Consequence.unit
+
+  def requirePhoneVerificationPending(
+    user: Record,
+    requestedPhoneNumber: String
+  ): Consequence[Unit] =
+    user.getString("phone_number") match
+      case None | Some("") =>
+        Consequence.failure("Current account does not have an SMS contact to verify.")
+      case Some(phone) if phone != requestedPhoneNumber =>
+        Consequence.failure(s"Requested phone number does not match the current account SMS contact: $requestedPhoneNumber")
+      case Some(_) =>
+        user.getString("phone_verified_at") match
+          case Some(v) if v.trim.nonEmpty => Consequence.failure("Current account phone number is already verified.")
+          case _ => Consequence.unit
+
   def requireEmailAvailable(
     email: String,
     users: Vector[UserAccountEntity]
@@ -881,6 +920,15 @@ object ComponentFactory:
 
   private[textus] def resetLoginWorkingSetForTest(): Unit =
     LoginWorkingSet.clear()
+
+  private[textus] def addLoggedInUserForTest(userId: EntityId)(using ExecutionContext): Consequence[Unit] =
+    EntityStore.standard().load[UserAccountEntity](userId).flatMap {
+      case Some(user) =>
+        LoginWorkingSet.upsert(user)
+        Consequence.unit
+      case None =>
+        Consequence.failure(s"User account not found for working set: ${userId.print}")
+    }
 
   def create(componentCreate: ComponentCreate): Vector[Component] =
     new ComponentFactory().create(componentCreate).map(_withArtifactMetadata)
