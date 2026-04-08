@@ -534,7 +534,7 @@ Terminates the active session context for the user.
 
 ###### POLICY
 
-authenticated_only
+owner_or_manager
 
 ##### PRECONDITION
 
@@ -562,7 +562,7 @@ Replaces the current password with a new password.
 
 ###### POLICY
 
-authenticated_only
+owner_or_manager
 
 ##### ENTITY
 
@@ -598,7 +598,7 @@ Marks the current account email as verified after successful proof validation.
 
 ###### POLICY
 
-authenticated_only
+owner_or_manager
 
 ##### ENTITY
 
@@ -634,7 +634,7 @@ Registers or confirms the current account SMS contact and records phone verifica
 
 ###### POLICY
 
-authenticated_only
+owner_or_manager
 
 ##### ENTITY
 
@@ -670,7 +670,7 @@ Returns the current account projection for the requesting user.
 
 ###### POLICY
 
-authenticated_only
+owner_or_manager
 
 ##### ENTITY
 

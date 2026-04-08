@@ -172,11 +172,11 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
       operationDefinitions.find(_.name == "provisionalRegistration").flatMap(_.access.map(_.policy)) shouldBe Some("anonymous_only")
       operationDefinitions.find(_.name == "register").flatMap(_.access.map(_.policy)) shouldBe Some("anonymous_only")
       operationDefinitions.find(_.name == "login").flatMap(_.access.map(_.policy)) shouldBe Some("anonymous_only")
-      operationDefinitions.find(_.name == "logout").flatMap(_.access.map(_.policy)) shouldBe Some("authenticated_only")
-      operationDefinitions.find(_.name == "changePassword").flatMap(_.access.map(_.policy)) shouldBe Some("authenticated_only")
-      operationDefinitions.find(_.name == "verifyMyEmail").flatMap(_.access.map(_.policy)) shouldBe Some("authenticated_only")
-      operationDefinitions.find(_.name == "verifyMyPhone").flatMap(_.access.map(_.policy)) shouldBe Some("authenticated_only")
-      operationDefinitions.find(_.name == "getMyAccount").flatMap(_.access.map(_.policy)) shouldBe Some("authenticated_only")
+      operationDefinitions.find(_.name == "logout").flatMap(_.access.map(_.policy)) shouldBe Some("owner_or_manager")
+      operationDefinitions.find(_.name == "changePassword").flatMap(_.access.map(_.policy)) shouldBe Some("owner_or_manager")
+      operationDefinitions.find(_.name == "verifyMyEmail").flatMap(_.access.map(_.policy)) shouldBe Some("owner_or_manager")
+      operationDefinitions.find(_.name == "verifyMyPhone").flatMap(_.access.map(_.policy)) shouldBe Some("owner_or_manager")
+      operationDefinitions.find(_.name == "getMyAccount").flatMap(_.access.map(_.policy)) shouldBe Some("owner_or_manager")
     }
 
     "enforce anonymous-only authorization during direct action execution" in {
@@ -214,28 +214,32 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
       ).toOption.isDefined shouldBe false
     }
 
-    "enforce authenticated-only authorization during direct action execution" in {
+    "enforce owner-or-manager authorization for logout during direct action execution" in {
       val component = _component()
       val fixture = _runtime_fixture()
-      val authenticatedCtx = _execution_context(
+      val userId = EntityId("test", "logout", UserAccountQuery.collectionId)
+      val managerCtx = _execution_context(
         fixture,
-        _security_context("plain_user_principal", SecurityContext.Privilege.User)
+        _security_context("manager_principal", SecurityContext.Privilege.ApplicationContentManager)
       )
       val anonymousCtx = _execution_context(
         fixture,
         _security_context("anonymous", SecurityContext.Privilege.User, withAccessToken = false, extraAttributes = Map("anonymous" -> "true"))
       )
+      given ExecutionContext = managerCtx
+      _seed_user_account(userId, "logout_principal", "logout@example.com").toOption.isDefined shouldBe true
+      ComponentFactory.addLoggedInUserForTest(userId)(using managerCtx).toOption.isDefined shouldBe true
 
       _execute(
         component,
-        authenticatedCtx,
-        _dummy_action("User", "logout")
+        managerCtx,
+        _dummy_action("User", "logout", "userAccountId" -> userId.print)
       ).toOption.isDefined shouldBe true
 
       _execute(
         component,
         anonymousCtx,
-        _dummy_action("User", "logout")
+        _dummy_action("User", "logout", "userAccountId" -> userId.print)
       ).toOption.isDefined shouldBe false
     }
 
