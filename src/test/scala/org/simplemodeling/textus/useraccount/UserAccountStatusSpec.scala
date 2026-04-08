@@ -29,7 +29,7 @@ import org.simplemodeling.textus.useraccount.entity.query.{UserAccount => UserAc
 
 /*
  * @since   Apr.  6, 2026
- * @version Apr.  7, 2026
+ * @version Apr.  8, 2026
  * @author  ASAMI, Tomoharu
  */
 final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
@@ -39,6 +39,13 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
       ComponentFactory.parseStatus("registered").toOption shouldBe Some(UserAccountStatus.Registered)
       ComponentFactory.parseStatus("formal").toOption shouldBe Some(UserAccountStatus.Formal)
       ComponentFactory.parseStatus("suspended").toOption shouldBe Some(UserAccountStatus.Suspended)
+    }
+
+    "decode datastore db values" in {
+      summon[org.goldenport.convert.ValueReader[UserAccountStatus]].read(0) shouldBe Some(UserAccountStatus.Provisional)
+      summon[org.goldenport.convert.ValueReader[UserAccountStatus]].read(1) shouldBe Some(UserAccountStatus.Registered)
+      summon[org.goldenport.convert.ValueReader[UserAccountStatus]].read("2") shouldBe Some(UserAccountStatus.Formal)
+      summon[org.goldenport.convert.ValueReader[UserAccountStatus]].read(3L) shouldBe Some(UserAccountStatus.Suspended)
     }
 
     "reject unknown states" in {

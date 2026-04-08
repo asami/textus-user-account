@@ -7,7 +7,7 @@ import org.simplemodeling.model.statemachine.StateMachine
 
 /*
  * @since   Apr.  6, 2026
- * @version Apr.  6, 2026
+ * @version Apr.  8, 2026
  * @author  ASAMI, Tomoharu
  */
 sealed abstract class UserAccountStatus(
@@ -29,17 +29,30 @@ object UserAccountStatus {
   )
 
   private val _by_name = values.map(x => x.value -> x).toMap
+  private val _by_db_value = values.map(x => x.dbValue -> x).toMap
 
   def parse(p: String): Consequence[UserAccountStatus] =
     Option(p).map(_.trim.toLowerCase).flatMap(_by_name.get) match
       case Some(s) => Consequence.success(s)
       case None => Consequence.failure(s"Invalid user-account status: $p")
 
+  def parseDbValue(p: Int): Consequence[UserAccountStatus] =
+    _by_db_value.get(p) match
+      case Some(s) => Consequence.success(s)
+      case None => Consequence.failure(s"Invalid user-account status dbValue: $p")
+
   given ValueReader[UserAccountStatus] with
     def readC(v: Any): Consequence[UserAccountStatus] =
       v match
         case s: UserAccountStatus => Consequence.success(s)
-        case s: String => parse(s)
+        case s: String =>
+          scala.util.Try(s.trim.toInt).toOption match
+            case Some(n) => parseDbValue(n)
+            case None => parse(s)
+        case n: Byte => parseDbValue(n.toInt)
+        case n: Short => parseDbValue(n.toInt)
+        case n: Int => parseDbValue(n)
+        case n: Long if n.isValidInt => parseDbValue(n.toInt)
         case other => parse(other.toString)
 
   given Encoder[UserAccountStatus] =

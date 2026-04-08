@@ -15,7 +15,9 @@ import org.goldenport.cncf.action.ActionCall
 import org.goldenport.cncf.component.{Component, ComponentCreate, EntityRuntimePlanProvider}
 import org.goldenport.cncf.CncfVersion
 import org.goldenport.cncf.context.ExecutionContext
+import org.goldenport.cncf.datastore.{Query as DsQuery, QueryDirective as DsQueryDirective}
 import org.goldenport.cncf.directive.Query
+import org.goldenport.cncf.entity.EntityStore
 import org.goldenport.cncf.entity.runtime.{EntityMemoryPolicy, EntityRuntimePlan, PartitionStrategy, WorkingSetDefinition}
 import org.goldenport.cncf.operation.CmlOperationAccess
 import org.goldenport.cncf.security.OperationAccessPolicy
@@ -27,12 +29,12 @@ import org.simplemodeling.model.value.ResourceAttributes
 import org.simplemodeling.textus.useraccount.entity.{Credential => CredentialEntity, UserAccount => UserAccountEntity}
 import org.simplemodeling.textus.useraccount.entity.create.{Credential => CredentialCreate, UserAccount => UserAccountCreate}
 import org.simplemodeling.textus.useraccount.entity.query.{Credential => CredentialQuery, UserAccount => UserAccountQuery}
-import org.simplemodeling.textus.useraccount.entity.update.{Credential => CredentialUpdate}
+import org.simplemodeling.textus.useraccount.entity.update.{Credential => CredentialUpdate, UserAccount => UserAccountUpdate}
 
 /*
  * @since   Mar. 23, 2026
  *  version Mar. 24, 2026
- * @version Apr.  7, 2026
+ * @version Apr.  8, 2026
  * @author  ASAMI, Tomoharu
  */
 class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePlanProvider:
@@ -213,10 +215,10 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           case Some(s) => exec_from(ComponentFactory.parseStatus(s))
           case None => exec_from(requiredStatus(record))
         _ <- exec_from(ComponentFactory.requireTransition(user.status, targetStatus))
-        _ <- exec_from(_update_user_account_fields(
+        _ <- _update_user_account_fields(
           userId,
           ComponentFactory.statusUpdateFields(targetStatus)
-        ))
+        )
       yield
         OperationResponse.void
 
@@ -328,40 +330,16 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           record
 
     private def userByEmail(email: String): ExecUowM[UserAccountEntity] =
-      val query = UserAccountQuery(
-        id = Condition.any[EntityId],
-        name = Condition.any[Name],
-        title = Condition.any[String],
-        email = Condition.is(email),
-        emailVerifiedAt = Condition.any[String],
-        phoneNumber = Condition.any[String],
-        phoneVerifiedAt = Condition.any[String],
-        lastLoginAt = Condition.any[String],
-        passwordChangedAt = Condition.any[String],
-        status = Condition.any[UserAccountStatus]
-      )
       for
-        result <- entity_search[UserAccountEntity](UserAccountQuery.collectionId, Query(query))
-        user <- exec_from(firstOrFailure(result.data, s"user account not found by email: $email"))
+        users <- rawUserAccountsByEmail(email)
+        user <- exec_from(firstOrFailure(users, s"user account not found by email: $email"))
       yield
         user
 
     private def requireEmailAvailable(email: String): ExecUowM[Unit] =
-      val query = UserAccountQuery(
-        id = Condition.any[EntityId],
-        name = Condition.any[Name],
-        title = Condition.any[String],
-        email = Condition.is(email),
-        emailVerifiedAt = Condition.any[String],
-        phoneNumber = Condition.any[String],
-        phoneVerifiedAt = Condition.any[String],
-        lastLoginAt = Condition.any[String],
-        passwordChangedAt = Condition.any[String],
-        status = Condition.any[UserAccountStatus]
-      )
       for
-        result <- entity_search[UserAccountEntity](UserAccountQuery.collectionId, Query(query))
-        _ <- exec_from(ComponentFactory.requireEmailAvailable(email, result.data))
+        users <- rawUserAccountsByEmail(email)
+        _ <- exec_from(ComponentFactory.requireEmailAvailable(email, users))
       yield
         ()
 
@@ -379,18 +357,69 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       userId: EntityId,
       password: String
     ): ExecUowM[CredentialEntity] =
-      val query = CredentialQuery(
-        id = Condition.any[EntityId],
-        name = Condition.any[Name],
-        title = Condition.any[String],
-        userAccountId = Condition.is(userId),
-        passwordHash = Condition.is(passwordHash(password))
-      )
       for
-        result <- entity_search[CredentialEntity](CredentialQuery.collectionId, Query(query))
-        credential <- exec_from(firstOrFailure(result.data, "invalid credentials"))
+        credentials <- rawCredentialsByUserAndPassword(userId, passwordHash(password))
+        credential <- exec_from(firstOrFailure(credentials, "invalid credentials"))
       yield
         credential
+
+    private def rawUserAccountsByEmail(email: String): ExecUowM[Vector[UserAccountEntity]] =
+      for
+        records <- rawRecords(UserAccountQuery.collectionId)
+        ids <- exec_from(
+          records
+            .filter(_.getString("email").contains(email))
+            .traverse(_entity_id_of)
+        )
+        users <- exec_from(
+          ids.traverse(id =>
+            EntityStore
+              .standard()
+              .load[UserAccountEntity](id)(using summon, executionContext)
+              .flatMap(x => Consequence.successOrEntityNotFound(x)(id))
+          )
+        )
+      yield
+        users
+
+    private def rawCredentialsByUserAndPassword(
+      userId: EntityId,
+      hashedPassword: String
+    ): ExecUowM[Vector[CredentialEntity]] =
+      for
+        records <- rawRecords(CredentialQuery.collectionId)
+        ids <- exec_from(
+          records
+            .filter(r =>
+              r.getString("user_account_id").contains(userId.print) &&
+                r.getString("password_hash").contains(hashedPassword)
+            )
+            .traverse(_entity_id_of)
+        )
+        credentials <- exec_from(
+          ids.traverse(id =>
+            EntityStore
+              .standard()
+              .load[CredentialEntity](id)(using summon, executionContext)
+              .flatMap(x => Consequence.successOrEntityNotFound(x)(id))
+          )
+        )
+      yield
+        credentials
+
+    private def rawRecords(collectionId: org.simplemodeling.model.datatype.EntityCollectionId): ExecUowM[Vector[Record]] =
+      exec_from {
+        for
+          cid <- executionContext.entityStoreSpace.dataStoreCollection(collectionId)
+          result <- executionContext.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))
+        yield
+          result.records.toVector
+      }
+
+    private def _entity_id_of(record: Record): Consequence[EntityId] =
+      record
+        .getAsC[EntityId]("id")
+        .flatMap(x => Consequence.successOrPropertyNotFound("id", x))
 
     private def deleteCredentials(credentials: Vector[CredentialEntity]): ExecUowM[Unit] =
       credentials.foldLeft(exec_pure(())) { (z, credential) =>
@@ -399,54 +428,69 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
     private def updateLastLoginAt(userId: EntityId): ExecUowM[Unit] =
       for
-        _ <- exec_from(_update_user_account_fields(
+        _ <- _update_user_account_fields_direct(
           userId,
           Record.dataAuto("last_login_at" -> Instant.now.toString)
-        ))
+        )
       yield
         ()
 
     private def updatePasswordChangedAt(userId: EntityId): ExecUowM[Unit] =
       for
-        _ <- exec_from(_update_user_account_fields(
+        _ <- _update_user_account_fields(
           userId,
           Record.dataAuto("password_changed_at" -> Instant.now.toString)
-        ))
+        )
       yield
         ()
 
     private def updateEmailVerifiedAt(userId: EntityId): ExecUowM[Unit] =
       for
-        _ <- exec_from(_update_user_account_fields(
+        _ <- _update_user_account_fields_direct(
           userId,
           Record.dataAuto("email_verified_at" -> Instant.now.toString)
-        ))
+        )
       yield
         ()
 
     private def updatePhoneVerification(userId: EntityId, phoneNumber: String): ExecUowM[Unit] =
       for
-        _ <- exec_from(_update_user_account_fields(
+        _ <- _update_user_account_fields_direct(
           userId,
           Record.dataAuto(
             "phone_number" -> phoneNumber,
             "phone_verified_at" -> Instant.now.toString
           )
-        ))
+        )
       yield
         ()
 
     private def _update_user_account_fields(
       userId: EntityId,
       changes: Record
-    ): Consequence[Unit] =
+    ): ExecUowM[Unit] =
       for
-        cid <- executionContext.entityStoreSpace.dataStoreCollection(userId)
-        eid <- executionContext.entityStoreSpace.dataStoreEntryId(userId)
-        ds <- executionContext.dataStoreSpace.dataStore(cid)
-        _ <- ds.update(cid, eid, changes)(using executionContext)
+        patch <- exec_from(UserAccountUpdate.createC(changes))
+        _ <- entity_update(userId, patch)
       yield
         ()
+
+    private def _update_user_account_fields_direct(
+      userId: EntityId,
+      changes: Record
+    ): ExecUowM[Unit] =
+      exec_from {
+        for
+          cid <- executionContext.entityStoreSpace.dataStoreCollection(UserAccountQuery.collectionId)
+          ds <- executionContext.dataStoreSpace.dataStore(cid)
+          _ <- ds.update(
+            cid,
+            org.goldenport.cncf.datastore.DataStore.EntryId(userId),
+            changes
+          )(using executionContext)
+        yield
+          ()
+      }
 
     private def passwordHash(password: String): String =
       val digest = MessageDigest.getInstance("SHA-256")
@@ -799,6 +843,12 @@ object ComponentFactory:
 
     def snapshot: Vector[UserAccountEntity] =
       users.values.toVector
+
+    def clear(): Unit =
+      users.clear()
+
+  private[textus] def resetLoginWorkingSetForTest(): Unit =
+    LoginWorkingSet.clear()
 
   def create(componentCreate: ComponentCreate): Vector[Component] =
     new ComponentFactory().create(componentCreate).map(_withArtifactMetadata)
