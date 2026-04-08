@@ -1215,10 +1215,23 @@ UserChangePasswordResult
 ### TYPE
 COMMAND
 
+### SUMMARY
+Verify the current account email address.
+
 ### INPUT
+
+#### SUMMARY
+Email verification request for the current account.
+
+#### TYPE
 UserVerifyMyEmail
 
 ### OUTPUT
+
+#### SUMMARY
+Email verification completion result.
+
+#### TYPE
 UserVerifyMyEmailResult
 
 ## verifyMyPhone
@@ -1226,10 +1239,23 @@ UserVerifyMyEmailResult
 ### TYPE
 COMMAND
 
+### SUMMARY
+Verify the current account SMS contact.
+
 ### INPUT
+
+#### SUMMARY
+Phone verification request for the current account.
+
+#### TYPE
 UserVerifyMyPhone
 
 ### OUTPUT
+
+#### SUMMARY
+Phone verification completion result.
+
+#### TYPE
 UserVerifyMyPhoneResult
 
 ## getMyAccount
