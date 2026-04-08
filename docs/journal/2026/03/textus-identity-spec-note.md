@@ -58,6 +58,14 @@ textus-session
 - password management
 - activation / deactivation
 - login authentication
+- refresh token rotation and reuse detection
+
+### Session Safety
+
+- `refreshAccessToken` remains an anonymous entrypoint because the caller presents only the refresh token
+- refresh token rotation is mandatory
+- reuse of an already-rotated refresh token is treated as a session-family compromise signal
+- on detected refresh token reuse, remaining access sessions and refresh sessions for that user are revoked
 
 ---
 
@@ -286,6 +294,28 @@ Rationale:
 - using `owner_or_manager` keeps the declaration stable even if the execution path later changes
   from "current user only" to an explicit target-id route.
 
+Additional security-direction clarification:
+
+- `textus-user-account` is the human-subject authentication component, not the single home of all authentication;
+- subsystem-to-subsystem and service-to-service authentication should use the same
+  `ExecutionContext(SecurityContext)` shape, but they should be provided by separate
+  system-subject components rather than by `UserAccount`;
+- the common framework responsibility belongs on the CNCF side:
+  - transport-level credential intake;
+  - credential/session resolution;
+  - normalized `SecurityContext` construction;
+  - authorization and observability use at the `ActionCall` and `UnitOfWork` chokepoints;
+- the component responsibility here is to resolve human-subject sessions into that shared
+  `SecurityContext` model.
+
+Current implementation scope:
+
+- align `textus-user-account` with the shared CNCF `SecurityContext`;
+- carry user session data through `ExecutionContext`;
+- provide human-subject authentication/session resolution only up to that integration boundary;
+- defer subsystem/service-subject authentication implementation to CNCF-side common
+  session-resolution design plus a separate system-subject component.
+
 ---
 
 # 15. Future Extensions
@@ -298,3 +328,23 @@ Rationale:
 ---
 
 End.
+
+---
+
+# 15. Subsystem Descriptor Wiring Direction
+
+When `textus-user-account` is deployed inside a subsystem, it should be treated as a human-authentication base component.
+
+The intended deployment behavior is:
+
+- if the component is present, CNCF should auto-wire its authentication provider by convention;
+- subsystem descriptors should still be able to disable it or prefer another provider;
+- the descriptor should eventually become the editable deployment specification source.
+
+In descriptor terms, `textus-user-account` should appear as a `security.authentication.providers[*]` candidate with:
+
+- `component = textus-user-account`
+- `kind = human`
+- `schemes = bearer, refresh-token`
+
+This keeps `textus-user-account` responsible for human subject/session resolution while CNCF owns common security-context composition and provider selection.

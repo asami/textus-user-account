@@ -552,6 +552,39 @@ Session/account context for sign-out.
 
 Logout execution result.
 
+#### refreshAccessToken
+
+##### DESCRIPTION
+
+Rotates the current refresh token and issues a new access token.
+
+##### ACCESS
+
+###### POLICY
+
+anonymous_only
+
+##### PRECONDITION
+
+The requester presents an active, unrevoked refresh token for a valid account.
+
+##### POSTCONDITION
+
+A new access token and refresh token pair is issued and the previous refresh token is rotated.
+
+##### RULE
+
+- Refresh token material is request-only input and must not be persisted as plain text.
+- Rotation invalidates the previously used refresh token.
+
+##### IN
+
+Refresh token and optional client context.
+
+##### OUT
+
+New access token and refresh token pair.
+
 #### changePassword
 
 ##### DESCRIPTION
@@ -966,6 +999,58 @@ Credential aggregate storing hashed secret and owner link.
 | userAccountId  | entityid | 1            |
 | passwordHash   | string   | 1            |
 
+## AccessSession
+
+### features
+
+extends = ["SimpleEntity"]
+
+### DESCRIPTION
+
+Issued access-session token state owned by a user account.
+
+### ATTRIBUTE
+
+| name             | type      | multiplicity |
+|------------------+-----------+--------------|
+| userAccountId    | entityid  | 1            |
+| refreshSessionId | string    | ?            |
+| tokenHash        | string    | 1            |
+| issuedAt         | date-time | 1            |
+| expiresAt        | date-time | 1            |
+| revokedAt        | date-time | ?            |
+| lastAccessedAt   | date-time | ?            |
+| clientId         | string    | ?            |
+| deviceInfo       | string    | ?            |
+| ipAddress        | string    | ?            |
+| userAgent        | string    | ?            |
+
+## RefreshSession
+
+### features
+
+extends = ["SimpleEntity"]
+
+### DESCRIPTION
+
+Refresh-session token state owned by a user account.
+
+### ATTRIBUTE
+
+| name               | type      | multiplicity |
+|--------------------+-----------+--------------|
+| userAccountId      | entityid  | 1            |
+| successorSessionId | string    | ?            |
+| tokenHash          | string    | 1            |
+| issuedAt           | date-time | 1            |
+| expiresAt          | date-time | 1            |
+| revokedAt          | date-time | ?            |
+| rotatedAt          | date-time | ?            |
+| clientId           | string    | ?            |
+| deviceInfo         | string    | ?            |
+| ipAddress          | string    | ?            |
+| userAgent          | string    | ?            |
+
 # COMMAND
 
 ## UserProvisionalRegistration
@@ -1047,6 +1132,18 @@ Command to replace an existing password with a new one.
 | userAccountId    | entityid | 1            |
 | currentPassword  | string   | 1            |
 | newPassword      | string   | 1            |
+
+## UserRefreshAccessToken
+
+### DESCRIPTION
+
+Command to exchange a refresh token for a new access token pair.
+
+### ATTRIBUTE
+
+| name         | type   | multiplicity |
+|--------------+--------+--------------|
+| refreshToken | string | 1            |
 
 ## UserVerifyMyEmail
 
@@ -1213,6 +1310,29 @@ UserChangePassword
 
 ### OUTPUT
 UserChangePasswordResult
+
+## refreshAccessToken
+
+### TYPE
+COMMAND
+
+### SUMMARY
+Rotate the current refresh token and issue a new token pair.
+
+### DESCRIPTION
+Accept an anonymous refresh-token request, issue a new access/refresh pair for an active session, and reject reuse of an already-rotated refresh token.
+
+### INPUT
+#### SUMMARY
+Refresh-token rotation request.
+
+UserRefreshAccessToken
+
+### OUTPUT
+#### SUMMARY
+New access-token and refresh-token pair.
+
+UserLoginResult
 
 ## verifyMyEmail
 

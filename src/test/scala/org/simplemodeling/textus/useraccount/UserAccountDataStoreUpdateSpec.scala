@@ -10,14 +10,16 @@ import org.goldenport.cncf.datastore.{DataStore, DataStoreSpace}
 import org.goldenport.datatype.{Identifier, Name, ObjectId}
 import org.goldenport.protocol.{Property, Request}
 import org.goldenport.protocol.operation.OperationResponse
+import org.goldenport.protocol.operation.OperationResponse.RecordResponse
 import org.goldenport.record.Record
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import org.simplemodeling.model.datatype.EntityId
 import org.simplemodeling.model.value.{AuditAttributes, ContextualAttributes, DescriptiveAttributes, LifecycleAttributes, MediaAttributes, NameAttributes, PublicationAttributes, ResourceAttributes, SecurityAttributes}
+import org.simplemodeling.textus.useraccount.entity.create.{AccessSession => AccessSessionCreateEntity}
 import org.simplemodeling.textus.useraccount.entity.create.{Credential => CredentialCreateEntity}
 import org.simplemodeling.textus.useraccount.entity.create.{UserAccount => UserAccountCreateEntity}
-import org.simplemodeling.textus.useraccount.entity.query.{UserAccount => UserAccountQuery}
+import org.simplemodeling.textus.useraccount.entity.query.{AccessSession => AccessSessionQuery, RefreshSession => RefreshSessionQuery, UserAccount => UserAccountQuery}
 import org.simplemodeling.textus.useraccount.entity.update.{UserAccount => UserAccountUpdateEntity}
 import org.simplemodeling.textus.useraccount.entity.create.UserAccount.given
 import org.goldenport.cncf.entity.EntityStore
@@ -25,7 +27,7 @@ import java.security.MessageDigest
 
 /*
  * @since   Apr.  7, 2026
- * @version Apr.  8, 2026
+ * @version Apr.  9, 2026
  * @author  ASAMI, Tomoharu
  */
 final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
@@ -132,6 +134,16 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val call = component.logic.createActionCall(action, anonymousCtx)
       val result = component.actionEngine.execute(call)
       result.toOption.isDefined shouldBe true
+      val sessions = {
+        val cid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId).toOption.get
+        summon[ExecutionContext].dataStoreSpace.search(cid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
+      }
+      sessions.count(_.getString("user_account_id").contains(userId.print)) shouldBe 1
+      val response = result.toOption.get.asInstanceOf[RecordResponse].record
+      response.getString("accessToken") should not be empty
+      response.getString("accessSessionId") should not be empty
+      response.getString("refreshToken") should not be empty
+      response.getString("refreshSessionId") should not be empty
     }
 
     "execute login after side-effect update wiring" in {
@@ -167,6 +179,114 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         )
       )
       result.toOption.isDefined shouldBe true
+    }
+
+    "resolve current user id from persisted access session token" in {
+      val fixture = _fixture()
+      given ExecutionContext = fixture.executionContext
+      val ownerPrincipalId = "session_owner"
+      val userId = _user_account_id("session_current")
+      val token = "token-session_owner"
+      _seed_user_account(userId, ownerPrincipalId, "session-current@example.com").toOption.isDefined shouldBe true
+      _seed_access_session(userId, ownerPrincipalId, token).toOption.isDefined shouldBe true
+
+      val authenticatedCtx = _with_security(
+        fixture,
+        ownerPrincipalId,
+        extraAttributes = Map("access_token" -> token)
+      )
+      ComponentFactory.currentLoggedInUserId()(using authenticatedCtx).toOption shouldBe Some(userId)
+    }
+
+    "rotate refresh token and issue a new token pair" in {
+      val fixture = _fixture()
+      val component = _component()
+      given ExecutionContext = fixture.executionContext
+      val ownerPrincipalId = "refresh_owner"
+      val userId = _user_account_id("refresh_pair")
+      val refreshToken = "refresh-token-owner"
+      _seed_user_account(userId, ownerPrincipalId, "refresh@example.com").toOption.isDefined shouldBe true
+      val originalRefreshId = _seed_refresh_session(userId, ownerPrincipalId, refreshToken).toOption.get
+
+      val anonymousCtx = _with_security(
+        fixture,
+        ownerPrincipalId,
+        withAccessToken = false,
+        extraAttributes = Map("anonymous" -> "true")
+      )
+      val result = _execute_request(
+        component,
+        anonymousCtx,
+        Request.ofService(
+          "User",
+          "refreshAccessToken",
+          properties = List(Property("refreshToken", refreshToken, None))
+        )
+      )
+      result.toOption.isDefined shouldBe true
+      val response = result.toOption.get.asInstanceOf[RecordResponse].record
+      response.getString("accessToken") should not be empty
+      response.getString("refreshToken") should not be empty
+      response.getString("refreshToken") should not be Some(refreshToken)
+
+      val cid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId).toOption.get
+      val records = summon[ExecutionContext].dataStoreSpace.search(cid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
+      val previous = records.find(_.getString("id").contains(originalRefreshId.print)).get
+      previous.getString("rotated_at") should not be empty
+      previous.getString("successor_session_id") should not be empty
+      records.count(_.getString("user_account_id").contains(userId.print)) shouldBe 2
+    }
+
+    "detect refresh token reuse and revoke remaining sessions" in {
+      val fixture = _fixture()
+      val component = _component()
+      given ExecutionContext = fixture.executionContext
+      val ownerPrincipalId = "refresh_reuse_owner"
+      val userId = _user_account_id("refresh_reuse")
+      val refreshToken = "refresh-token-reuse"
+      _seed_user_account(userId, ownerPrincipalId, "reuse@example.com").toOption.isDefined shouldBe true
+      _seed_refresh_session(userId, ownerPrincipalId, refreshToken).toOption.isDefined shouldBe true
+
+      val anonymousCtx = _with_security(
+        fixture,
+        ownerPrincipalId,
+        withAccessToken = false,
+        extraAttributes = Map("anonymous" -> "true")
+      )
+
+      val first = _execute_request(
+        component,
+        anonymousCtx,
+        Request.ofService(
+          "User",
+          "refreshAccessToken",
+          properties = List(Property("refreshToken", refreshToken, None))
+        )
+      )
+      first.toOption.isDefined shouldBe true
+
+      val second = _execute_request(
+        component,
+        anonymousCtx,
+        Request.ofService(
+          "User",
+          "refreshAccessToken",
+          properties = List(Property("refreshToken", refreshToken, None))
+        )
+      )
+      second.toOption.isDefined shouldBe false
+
+      val refreshCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId).toOption.get
+      val refreshRecords = summon[ExecutionContext].dataStoreSpace.search(refreshCid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
+      val activeRefreshCount = refreshRecords
+        .count(r => r.getString("user_account_id").contains(userId.print) && r.getString("revoked_at").isEmpty)
+      activeRefreshCount shouldBe 0
+
+      val accessCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId).toOption.get
+      val accessRecords = summon[ExecutionContext].dataStoreSpace.search(accessCid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
+      val activeAccessCount = accessRecords
+        .count(r => r.getString("user_account_id").contains(userId.print) && r.getString("revoked_at").isEmpty)
+      activeAccessCount shouldBe 0
     }
 
     "surface current login-like patch failure under anonymous context" in {
@@ -747,11 +867,107 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
     EntityStore.standard().create(entity).map(_ => ())
   }
 
+  private def _seed_access_session(
+    userId: EntityId,
+    ownerPrincipalId: String,
+    token: String
+  )(using ExecutionContext) = {
+    val sessionId = _access_session_id("access_session")
+    val principal = ObjectId(Identifier(ownerPrincipalId))
+    val rights = SecurityAttributes.Rights(
+      SecurityAttributes.Rights.Permissions(read = true, write = true, execute = true),
+      SecurityAttributes.Rights.Permissions(read = true, write = false, execute = false),
+      SecurityAttributes.Rights.Permissions(read = true, write = false, execute = false)
+    )
+    val entity = AccessSessionCreateEntity(
+      id = Some(sessionId),
+      nameAttributes = NameAttributes.simple(Name("access_session")),
+      descriptiveAttributes = DescriptiveAttributes.empty,
+      lifecycleAttributes = LifecycleAttributes(
+        java.time.ZonedDateTime.of(1970, 1, 1, 0, 0, 0, 0, java.time.ZoneOffset.UTC),
+        None,
+        Identifier("system"),
+        None,
+        org.simplemodeling.model.statemachine.PostStatus.default,
+        org.simplemodeling.model.statemachine.Aliveness.default
+      ),
+      publicationAttributes = PublicationAttributes(None, None, None, None, None),
+      securityAttributes = SecurityAttributes(principal, principal, rights, principal),
+      resourceAttributes = ResourceAttributes(),
+      auditAttributes = AuditAttributes(),
+      mediaAttributes = MediaAttributes(None, Vector.empty, Vector.empty, Vector.empty, Vector.empty),
+      contextualAttribute = ContextualAttributes(),
+      userAccountId = Some(userId),
+      refreshSessionId = None,
+      tokenHash = _password_hash(token),
+      issuedAt = "2026-04-09T00:00:00Z",
+      expiresAt = "2099-01-01T00:00:00Z",
+      revokedAt = None,
+      lastAccessedAt = None,
+      clientId = None,
+      deviceInfo = None,
+      ipAddress = None,
+      userAgent = None
+    )
+    EntityStore.standard().create(entity).map(_ => ())
+  }
+
+  private def _seed_refresh_session(
+    userId: EntityId,
+    ownerPrincipalId: String,
+    token: String
+  )(using ExecutionContext) = {
+    val sessionId = _refresh_session_id("refresh_session")
+    val principal = ObjectId(Identifier(ownerPrincipalId))
+    val rights = SecurityAttributes.Rights(
+      SecurityAttributes.Rights.Permissions(read = true, write = true, execute = true),
+      SecurityAttributes.Rights.Permissions(read = true, write = false, execute = false),
+      SecurityAttributes.Rights.Permissions(read = true, write = false, execute = false)
+    )
+    val entity = org.simplemodeling.textus.useraccount.entity.create.RefreshSession(
+      id = Some(sessionId),
+      nameAttributes = NameAttributes.simple(Name("refresh_session")),
+      descriptiveAttributes = DescriptiveAttributes.empty,
+      lifecycleAttributes = LifecycleAttributes(
+        java.time.ZonedDateTime.of(1970, 1, 1, 0, 0, 0, 0, java.time.ZoneOffset.UTC),
+        None,
+        Identifier("system"),
+        None,
+        org.simplemodeling.model.statemachine.PostStatus.default,
+        org.simplemodeling.model.statemachine.Aliveness.default
+      ),
+      publicationAttributes = PublicationAttributes(None, None, None, None, None),
+      securityAttributes = SecurityAttributes(principal, principal, rights, principal),
+      resourceAttributes = ResourceAttributes(),
+      auditAttributes = AuditAttributes(),
+      mediaAttributes = MediaAttributes(None, Vector.empty, Vector.empty, Vector.empty, Vector.empty),
+      contextualAttribute = ContextualAttributes(),
+      userAccountId = Some(userId),
+      successorSessionId = None,
+      tokenHash = _password_hash(token),
+      issuedAt = "2026-04-09T00:00:00Z",
+      expiresAt = "2099-01-01T00:00:00Z",
+      revokedAt = None,
+      rotatedAt = None,
+      clientId = None,
+      deviceInfo = None,
+      ipAddress = None,
+      userAgent = None
+    )
+    EntityStore.standard().create(entity).map(_ => sessionId)
+  }
+
   private def _user_account_id(label: String): EntityId =
     _entity_id(UserAccountQuery.collectionId, label)
 
   private def _credential_id(label: String): EntityId =
     _entity_id(org.simplemodeling.textus.useraccount.entity.query.Credential.collectionId, label)
+
+  private def _access_session_id(label: String): EntityId =
+    _entity_id(AccessSessionQuery.collectionId, label)
+
+  private def _refresh_session_id(label: String): EntityId =
+    _entity_id(RefreshSessionQuery.collectionId, label)
 
   private def _entity_id(
     collectionId: org.simplemodeling.model.datatype.EntityCollectionId,

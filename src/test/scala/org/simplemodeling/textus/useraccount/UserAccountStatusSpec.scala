@@ -30,7 +30,7 @@ import org.simplemodeling.textus.useraccount.entity.create.UserAccount.given
 
 /*
  * @since   Apr.  6, 2026
- * @version Apr.  8, 2026
+ * @version Apr.  9, 2026
  * @author  ASAMI, Tomoharu
  */
 final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
@@ -141,6 +141,7 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
     }
 
     "resolve current user id from the active working set" in {
+      given ExecutionContext = ExecutionContext.test(SecurityContext.Privilege.User)
       ComponentFactory.currentLoggedInUserId().toOption.isDefined shouldBe false
     }
 
@@ -172,11 +173,18 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
       operationDefinitions.find(_.name == "provisionalRegistration").flatMap(_.access.map(_.policy)) shouldBe Some("anonymous_only")
       operationDefinitions.find(_.name == "register").flatMap(_.access.map(_.policy)) shouldBe Some("anonymous_only")
       operationDefinitions.find(_.name == "login").flatMap(_.access.map(_.policy)) shouldBe Some("anonymous_only")
+      operationDefinitions.find(_.name == "refreshAccessToken").flatMap(_.access.map(_.policy)) shouldBe Some("anonymous_only")
       operationDefinitions.find(_.name == "logout").flatMap(_.access.map(_.policy)) shouldBe Some("owner_or_manager")
       operationDefinitions.find(_.name == "changePassword").flatMap(_.access.map(_.policy)) shouldBe Some("owner_or_manager")
       operationDefinitions.find(_.name == "verifyMyEmail").flatMap(_.access.map(_.policy)) shouldBe Some("owner_or_manager")
       operationDefinitions.find(_.name == "verifyMyPhone").flatMap(_.access.map(_.policy)) shouldBe Some("owner_or_manager")
       operationDefinitions.find(_.name == "getMyAccount").flatMap(_.access.map(_.policy)) shouldBe Some("owner_or_manager")
+    }
+
+    "keep refreshAccessToken as an anonymous entrypoint while token-family safety is enforced by runtime session checks" in {
+      val refresh = UserAccountComponent().operationDefinitions.find(_.name == "refreshAccessToken").getOrElse(fail("refreshAccessToken metadata missing"))
+      refresh.access.map(_.policy) shouldBe Some("anonymous_only")
+      refresh.entityName shouldBe None
     }
 
     "enforce anonymous-only authorization during direct action execution" in {
