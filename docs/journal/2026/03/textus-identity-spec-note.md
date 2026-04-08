@@ -260,8 +260,31 @@ The current security direction is:
 - `UserRole` provides application-specific role/capability context
 - `UserProfile` provides profile-oriented information
 - SMS is treated as a security/contact extension, not as generic profile data
+- self-service operations that read/update a `UserAccount` should prefer `owner_or_manager`
+  rather than plain `authenticated_only`, even when the current implementation resolves the
+  target from `ExecutionContext`
+- the policy expression should remain declarative in CML/operation metadata
+- component/application code should interpret that metadata at the authorization boundary,
+  rather than relying on per-operation generated authorization logic
 
 This keeps the model usable while still allowing stronger security requirements than a typical ad-hoc web application account model.
+
+Current `textus-user-account` alignment:
+
+- `logout`
+- `changePassword`
+- `verifyMyEmail`
+- `verifyMyPhone`
+- `getMyAccount`
+
+are treated as `owner_or_manager` operations.
+
+Rationale:
+
+- semantically they operate on a protected `UserAccount` object;
+- the authorization rule should therefore be stated in object terms;
+- using `owner_or_manager` keeps the declaration stable even if the execution path later changes
+  from "current user only" to an explicit target-id route.
 
 ---
 

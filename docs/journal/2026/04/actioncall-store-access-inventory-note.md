@@ -196,6 +196,15 @@ If these paths are wrapped by protected internal DSL entry points, then:
 - search/list result visibility can be centralized;
 - action-call logic becomes smaller and less security-sensitive.
 
+Current implementation direction after the declarative access update:
+
+- operation metadata carries policies such as `owner_or_manager`;
+- generator output keeps that policy as metadata instead of baking per-operation
+  authorization logic into generated action calls;
+- component-level authorization hooks interpret the metadata and map it to the
+  actual object-level check;
+- this keeps the declaration stable while avoiding duplicated generated security code.
+
 ## Proposed Internal DSL Modules
 
 For `textus-user-account`, the natural protected internal DSL split appears to be:
