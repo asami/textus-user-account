@@ -894,6 +894,9 @@ Core user profile and operational account state.
 | phoneVerifiedAt   | date-time | ?            |             |
 | lastLoginAt       | date-time | ?            |             |
 | passwordChangedAt | date-time | ?            |             |
+| suspendedAt       | date-time | ?            |             |
+| suspendedBy       | string    | ?            |             |
+| suspensionReason  | string    | ?            |             |
 
 ### StateMachine
 
@@ -1100,6 +1103,7 @@ Administrative command to mutate account status.
 |---------------+----------+--------------|
 | userAccountId | entityid | 1            |
 | status        | string   | 1            |
+| suspensionReason | string | ?           |
 
 ## AdminDeleteUserAccount
 

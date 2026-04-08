@@ -19,13 +19,14 @@ import org.goldenport.protocol.{Property, Request}
 import org.goldenport.protocol.operation.OperationResponse
 import org.goldenport.datatype.{Identifier, Name, ObjectId}
 import org.simplemodeling.model.datatype.EntityId
-import org.simplemodeling.model.directive.Condition
+import org.simplemodeling.model.directive.{Condition, Update}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import org.simplemodeling.model.value.{AuditAttributes, ContextualAttributes, DescriptiveAttributes, LifecycleAttributes, MediaAttributes, NameAttributes, PublicationAttributes, ResourceAttributes, SecurityAttributes}
 import org.simplemodeling.textus.useraccount.entity.{UserAccount => UserAccountEntity}
 import org.simplemodeling.textus.useraccount.entity.create.{UserAccount => UserAccountCreateEntity}
 import org.simplemodeling.textus.useraccount.entity.query.{UserAccount => UserAccountQuery}
+import org.simplemodeling.textus.useraccount.entity.create.UserAccount.given
 
 /*
  * @since   Apr.  6, 2026
@@ -119,6 +120,9 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
         phoneVerifiedAt = Condition.any[String],
         lastLoginAt = Condition.any[String],
         passwordChangedAt = Condition.any[String],
+        suspendedAt = Condition.any[String],
+        suspendedBy = Condition.any[String],
+        suspensionReason = Condition.any[String],
         status = Condition.any[UserAccountStatus]
       )
       val query = Query.plan(
@@ -326,11 +330,23 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
     }
 
     "build status update fields with synchronized activation status" in {
-      val changes = ComponentFactory.statusUpdateFields(UserAccountStatus.Suspended)
-      changes.getInt("status") shouldBe Some(UserAccountStatus.Suspended.dbValue)
-      changes
-        .getRecord("resource_attributes")
-        .flatMap(_.getInt("activation_status")) shouldBe Some(org.simplemodeling.model.statemachine.ActivationStatus.Deactivated.dbValue)
+      given ExecutionContext = ExecutionContext.test(SecurityContext.Privilege.ApplicationContentManager)
+      val changes = ComponentFactory.statusUpdateFields(UserAccountStatus.Suspended, Some("policy_violation"))
+      changes.status shouldBe Update.set(UserAccountStatus.Suspended)
+      changes.suspendedBy.isSet shouldBe true
+      changes.suspensionReason shouldBe Update.set("policy_violation")
+      changes.suspendedAt.isSet shouldBe true
+      changes.resourceAttributes.activationStatus shouldBe Update.set(org.simplemodeling.model.statemachine.ActivationStatus.Deactivated)
+    }
+
+    "clear suspension fields when status is restored" in {
+      given ExecutionContext = ExecutionContext.test(SecurityContext.Privilege.ApplicationContentManager)
+      val changes = ComponentFactory.statusUpdateFields(UserAccountStatus.Registered)
+      changes.status shouldBe Update.set(UserAccountStatus.Registered)
+      changes.suspendedAt shouldBe Update.setNull
+      changes.suspendedBy shouldBe Update.setNull
+      changes.suspensionReason shouldBe Update.setNull
+      changes.resourceAttributes.activationStatus shouldBe Update.set(org.simplemodeling.model.statemachine.ActivationStatus.Active)
     }
   }
 
@@ -463,6 +479,9 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
       phoneVerifiedAt = None,
       lastLoginAt = None,
       passwordChangedAt = None,
+      suspendedAt = None,
+      suspendedBy = None,
+      suspensionReason = None,
       status = UserAccountStatus.Registered
     )
     EntityStore.standard().create(entity).map(_ => ())

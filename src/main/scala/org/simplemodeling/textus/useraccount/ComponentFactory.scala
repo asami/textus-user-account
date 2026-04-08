@@ -24,7 +24,7 @@ import org.goldenport.cncf.security.OperationAccessPolicy
 import org.goldenport.cncf.unitofwork.{ExecUowM, UnitOfWorkAuthorization}
 import org.simplemodeling.model.directive.{Condition, Update}
 import org.simplemodeling.model.statemachine.ActivationStatus
-import org.simplemodeling.model.value.ResourceAttributes
+import org.simplemodeling.model.value.{ResourceAttributes, ResourceAttributesUpdate}
 
 import org.simplemodeling.textus.useraccount.entity.{Credential => CredentialEntity, UserAccount => UserAccountEntity}
 import org.simplemodeling.textus.useraccount.entity.create.{Credential => CredentialCreate, UserAccount => UserAccountCreate}
@@ -214,10 +214,11 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         targetStatus <- forcedStatus match
           case Some(s) => exec_from(ComponentFactory.parseStatus(s))
           case None => exec_from(requiredStatus(record))
+        suspensionReason <- exec_from(optionalString(record, List("suspensionReason", "suspension_reason")))
         _ <- exec_from(ComponentFactory.requireTransition(user.status, targetStatus))
         _ <- _update_user_account_fields(
           userId,
-          ComponentFactory.statusUpdateFields(targetStatus)
+          ComponentFactory.statusUpdateFields(targetStatus, suspensionReason)(using executionContext)
         )
       yield
         OperationResponse.void
@@ -248,6 +249,9 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           phoneVerifiedAt = Condition.any[String],
           lastLoginAt = Condition.any[String],
           passwordChangedAt = Condition.any[String],
+          suspendedAt = Condition.any[String],
+          suspendedBy = Condition.any[String],
+          suspensionReason = Condition.any[String],
           status = status.map(Condition.is[UserAccountStatus]).getOrElse(Condition.any[UserAccountStatus])
         )
         query = Query.plan(condition, limit = limit, offset = offset)
@@ -474,6 +478,12 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         _ <- entity_update(userId, patch)
       yield
         ()
+
+    private def _update_user_account_fields(
+      userId: EntityId,
+      patch: UserAccountUpdate
+    ): ExecUowM[Unit] =
+      entity_update(userId, patch)
 
     private def _update_user_account_fields_direct(
       userId: EntityId,
@@ -760,15 +770,37 @@ object ComponentFactory:
       case UserAccountStatus.Suspended => ActivationStatus.Deactivated
 
   def statusUpdateFields(
-    status: UserAccountStatus
-  ): Record =
+    status: UserAccountStatus,
+    suspensionReason: Option[String] = None
+  )(using ctx: ExecutionContext): UserAccountUpdate =
     val activationStatus = activationStatusForUserAccountStatus(status)
-    Record.dataAuto(
-      "status" -> status.dbValue,
-      "resource_attributes" -> Record.dataAuto(
-        "activation_status" -> activationStatus.dbValue
-      )
-    )
+    status match
+      case UserAccountStatus.Suspended =>
+        UserAccountUpdate
+          .Builder()
+          .withStatus(status)
+          .withSuspendedAt(Instant.now.toString)
+          .withSuspendedBy(ctx.security.principal.id.value)
+          .withSuspensionReason(suspensionReason.map(Update.set).getOrElse(Update.noop))
+          .withResourceAttributes(
+            ResourceAttributesUpdate(
+              activationStatus = Update.set(activationStatus)
+            )
+          )
+          .build()
+      case _ =>
+        UserAccountUpdate
+          .Builder()
+          .withStatus(status)
+          .withSuspendedAt(Update.setNull)
+          .withSuspendedBy(Update.setNull)
+          .withSuspensionReason(Update.setNull)
+          .withResourceAttributes(
+            ResourceAttributesUpdate(
+              activationStatus = Update.set(activationStatus)
+            )
+          )
+          .build()
 
   def parseStatus(p: String): Consequence[UserAccountStatus] =
     UserAccountStatus.parse(p)

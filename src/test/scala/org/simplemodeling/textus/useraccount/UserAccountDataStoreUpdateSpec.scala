@@ -19,6 +19,7 @@ import org.simplemodeling.textus.useraccount.entity.create.{Credential => Creden
 import org.simplemodeling.textus.useraccount.entity.create.{UserAccount => UserAccountCreateEntity}
 import org.simplemodeling.textus.useraccount.entity.query.{UserAccount => UserAccountQuery}
 import org.simplemodeling.textus.useraccount.entity.update.{UserAccount => UserAccountUpdateEntity}
+import org.simplemodeling.textus.useraccount.entity.create.UserAccount.given
 import org.goldenport.cncf.entity.EntityStore
 import java.security.MessageDigest
 
@@ -432,6 +433,74 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         stored.flatMap(_.getAny("last_login_at")) should not be empty
       }
     }
+
+    "persist suspension details through actual status update operations" in {
+      val fixture = _fixture()
+      val component = _component()
+      val managerCtx = _with_security(
+        fixture,
+        SecurityContext.Privilege.ApplicationContentManager.principalId.value,
+        privilege = SecurityContext.Privilege.ApplicationContentManager
+      )
+      given ExecutionContext = managerCtx
+      val userId = _user_account_id("suspend_restore")
+      _seed_user_account(userId, "integration_owner", "suspend-restore@example.com").toOption.isDefined shouldBe true
+
+      _execute_request(
+        component,
+        managerCtx,
+        Request.ofService(
+          "Management",
+          "updateUserStatus",
+          properties = List(
+            Property("userAccountId", userId.print, None),
+            Property("status", "suspended", None),
+            Property("suspensionReason", "policy_violation", None)
+          )
+        )
+      ).toOption.isDefined shouldBe true
+
+      val cid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(userId).toOption.get
+      val dsid = summon[ExecutionContext].entityStoreSpace.dataStoreEntryId(userId).toOption.get
+      val datastore = summon[ExecutionContext].dataStoreSpace.dataStore(cid).toOption.get
+      val suspended = datastore.load(cid, dsid).toOption.flatten
+      val suspendedSummary = suspended.map(_.fields.map(f => f.key -> Option(f.value).map(_.toString).orNull).toVector)
+      withClue(s"suspended=${suspendedSummary}") {
+        suspended.flatMap(_.getAny("status")).map(_.toString.contains("suspended")) shouldBe Some(true)
+        suspended.flatMap(_.getAny("suspended_at")) should not be empty
+        suspended.flatMap(_.getString("suspended_by")) shouldBe Some(SecurityContext.Privilege.ApplicationContentManager.principalId.value)
+        suspended.flatMap(_.getString("suspension_reason")) shouldBe Some("policy_violation")
+      }
+
+      _execute_request(
+        component,
+        managerCtx,
+        Request.ofService(
+          "Management",
+          "updateUserStatus",
+          properties = List(
+            Property("userAccountId", userId.print, None),
+            Property("status", "registered", None)
+          )
+        )
+      ).toOption.isDefined shouldBe true
+
+      val restored = datastore.load(cid, dsid).toOption.flatten
+      val restoredSummary = restored.map(r =>
+        Vector(
+          "status" -> r.getAny("status").flatMap(x => Option(x).map(_.toString)).orNull,
+          "suspended_at" -> r.getAny("suspended_at").flatMap(x => Option(x).map(_.toString)).orNull,
+          "suspended_by" -> r.getAny("suspended_by").flatMap(x => Option(x).map(_.toString)).orNull,
+          "suspension_reason" -> r.getAny("suspension_reason").flatMap(x => Option(x).map(_.toString)).orNull
+        )
+      )
+      withClue(s"restored=${restoredSummary}") {
+        restored.flatMap(_.getAny("status")).map(_.toString.contains("registered")) shouldBe Some(true)
+        restored.flatMap(_.getAny("suspended_at")).forall(java.util.Objects.isNull) shouldBe true
+        restored.flatMap(_.getAny("suspended_by")).forall(java.util.Objects.isNull) shouldBe true
+        restored.flatMap(_.getAny("suspension_reason")).forall(java.util.Objects.isNull) shouldBe true
+      }
+    }
   }
 
   private def _fixture(): _Fixture = {
@@ -549,6 +618,9 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       phoneVerifiedAt = None,
       lastLoginAt = None,
       passwordChangedAt = None,
+      suspendedAt = None,
+      suspendedBy = None,
+      suspensionReason = None,
       status = UserAccountStatus.Registered
     )
     EntityStore.standard().create(entity).map(_ => ())
