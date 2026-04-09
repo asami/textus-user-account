@@ -267,17 +267,9 @@ If required user-facing information does not fit the generic `UserProfile`, the 
 Current basic `UserProfile` shape:
 
 - `userAccountId`
-- `familyName`
-- `givenName`
-- `familyNameKana`
-- `givenNameKana`
-- `displayName`
-- `nickname`
-- `avatarUrl`
-- `birthday`
-- `locale`
-- `timeZone`
-- `address`
+- `identityPresentation?: IdentityPresentation`
+- `personalProfile?: PersonalProfile`
+- `organizationSupport?: OrganizationSupport`
 
 ---
 
@@ -308,7 +300,7 @@ In short:
 
 ---
 
-# 14. Security Direction
+# 15. Security Direction
 
 Authentication and authorization are separated from profile concerns.
 
@@ -368,7 +360,61 @@ Current implementation scope:
 
 ---
 
-# 16. Implementation Inventory
+# 16. Basic Type Mapping Direction
+
+CML basic type mapping is maintained on the Cozy side because it belongs to the CML/generator contract.
+See `/Users/asami/src/dev2025/cozy/docs/journal/2026/04/cml-basic-type-mapping-note.md`.
+
+# 17. UserProfile Standard Shape
+
+`UserProfile` is the standard common profile carried by `textus-user-account` for enterprise and EC-oriented systems.
+It should cover broadly common personal profile needs without absorbing application-specific role data.
+Its public shape is composed through delegated value objects rather than one large flat attribute list.
+
+The standard attribute set is divided as follows.
+
+## Identity Presentation
+
+- `familyName`
+- `givenName`
+- `familyNameKana`
+- `givenNameKana`
+- `displayName`
+- `nickname`
+- `avatarUrl`
+
+These attributes are grouped into `IdentityPresentation`.
+They support ordinary person-name rendering, Japanese phonetic reading, and UI presentation.
+
+## Personal Profile
+
+- `birthday`
+- `locale`
+- `timeZone`
+- `address: Address`
+
+These attributes are grouped into `PersonalProfile`.
+They represent common end-user profile data used across many enterprise systems.
+
+## Organization Support
+
+The following are candidates for the common profile when broadly needed across systems.
+
+- `organization`
+- `department`
+- `jobTitle`
+
+They are grouped into `OrganizationSupport`.
+They are useful in enterprise deployments, but if the owning application has domain-specific semantics, they may instead be modeled in application-side `UserRole` metadata.
+
+## Boundary
+
+`UserProfile` should contain broadly shared user-facing profile attributes.
+Application-specific profile extensions, workflow-specific attributes, tenant-specific classifications, and role-dependent business metadata should be added through application-defined `UserRole` families rather than being forced into the common profile.
+
+If the common `UserAccount` / `UserProfile` model still does not fit, the system may replace `textus-user-account` with a custom user-management component and connect it to CNCF through the same security integration route.
+
+# 18. Implementation Inventory
 
 Provided now:
 
@@ -392,7 +438,7 @@ Deferred for the next phase:
 
 ---
 
-# 17. Future Extensions
+# 19. Future Extensions
 
 - credential separation
 - session management
@@ -401,7 +447,7 @@ Deferred for the next phase:
 
 ---
 
-# 18. Subsystem Descriptor Wiring Direction
+# 20. Subsystem Descriptor Wiring Direction
 
 When `textus-user-account` is deployed inside a subsystem, it should be treated as a human-authentication base component.
 

@@ -1025,23 +1025,22 @@ extends = ["SimpleEntity"]
 ### DESCRIPTION
 
 Generic personal/profile companion model owned by a user account.
+It carries common enterprise-facing profile attributes and leaves application-specific role metadata to `UserRole` families.
+
+### DELEGATE
+
+- name: IdentityPresentation
+  multiplicity: "?"
+- name: PersonalProfile
+  multiplicity: "?"
+- name: OrganizationSupport
+  multiplicity: "?"
 
 ### ATTRIBUTE
 
-| name           | type     | multiplicity | constraints |
-|----------------+----------+--------------+-------------|
-| userAccountId  | entityid | 1            |             |
-| familyName     | string   | ?            |             |
-| givenName      | string   | ?            |             |
-| familyNameKana | string   | ?            |             |
-| givenNameKana  | string   | ?            |             |
-| displayName    | string   | ?            |             |
-| nickname       | string   | ?            |             |
-| avatarUrl      | string   | ?            |             |
-| birthday       | string   | ?            |             |
-| locale         | string   | ?            |             |
-| timeZone       | string   | ?            |             |
-| address        | Address  | ?            |             |
+| name          | type     | multiplicity | constraints |
+|---------------+----------+--------------+-------------|
+| userAccountId | entityid | 1            |             |
 
 ## Credential
 

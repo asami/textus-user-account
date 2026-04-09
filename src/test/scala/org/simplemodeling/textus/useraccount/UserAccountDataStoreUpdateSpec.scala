@@ -15,7 +15,7 @@ import org.goldenport.record.Record
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import org.simplemodeling.model.datatype.EntityId
-import org.simplemodeling.model.value.{AuditAttributes, ContextualAttributes, DescriptiveAttributes, LifecycleAttributes, MediaAttributes, NameAttributes, PublicationAttributes, ResourceAttributes, SecurityAttributes}
+import org.simplemodeling.model.value.{AuditAttributes, ContextualAttributes, DescriptiveAttributes, IdentityPresentation, LifecycleAttributes, MediaAttributes, NameAttributes, OrganizationSupport, PersonalProfile, PublicationAttributes, ResourceAttributes, SecurityAttributes}
 import org.simplemodeling.textus.useraccount.entity.create.{AccessSession => AccessSessionCreateEntity}
 import org.simplemodeling.textus.useraccount.entity.create.{Credential => CredentialCreateEntity}
 import org.simplemodeling.textus.useraccount.entity.create.{UserProfile => UserProfileCreateEntity}
@@ -24,6 +24,7 @@ import org.simplemodeling.textus.useraccount.entity.query.{AccessSession => Acce
 import org.simplemodeling.textus.useraccount.entity.update.{UserAccount => UserAccountUpdateEntity}
 import org.simplemodeling.textus.useraccount.entity.create.UserAccount.given
 import org.goldenport.cncf.entity.EntityStore
+import java.net.URI
 import java.security.MessageDigest
 
 /*
@@ -244,9 +245,10 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       )
       result.toOption.isDefined shouldBe true
       val response = result.toOption.get.asInstanceOf[RecordResponse].record
-      response.getString("display_name") shouldBe Some("Integration User")
-      response.getString("nickname") shouldBe Some("integ-user")
-      response.getString("avatar_url") shouldBe Some("https://example.com/avatar/integration-user.png")
+      val identityPresentation = response.getRecord("identity_presentation").getOrElse(fail("identity_presentation missing"))
+      identityPresentation.getString("display_name") shouldBe Some("Integration User")
+      identityPresentation.getString("nickname") shouldBe Some("integ-user")
+      identityPresentation.getString("avatar_url") shouldBe Some("https://example.com/avatar/integration-user.png")
     }
 
     "logout should revoke only the current session pair" in {
@@ -1091,17 +1093,25 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       mediaAttributes = MediaAttributes(None, Vector.empty, Vector.empty, Vector.empty, Vector.empty),
       contextualAttribute = ContextualAttributes(),
       userAccountId = Some(userId),
-      familyName = Some("Integration"),
-      givenName = Some("User"),
-      familyNameKana = Some("インテグレーション"),
-      givenNameKana = Some("ユーザー"),
-      displayName = Some("Integration User"),
-      nickname = Some("integ-user"),
-      avatarUrl = Some("https://example.com/avatar/integration-user.png"),
-      birthday = Some("2000-01-01"),
-      locale = Some("ja-JP"),
-      timeZone = Some("Asia/Tokyo"),
-      address = None
+      identityPresentation = Some(
+        IdentityPresentation.create(
+          Name("Integration"),
+          Name("User"),
+          Name("インテグレーション"),
+          Name("ユーザー"),
+          Name("Integration User"),
+          Name("integ-user"),
+          URI.create("https://example.com/avatar/integration-user.png").toURL
+        )
+      ),
+      personalProfile = None,
+      organizationSupport = Some(
+        OrganizationSupport.create(
+          Name("Textus"),
+          Name("Engineering"),
+          Name("Principal User")
+        )
+      )
     )
     EntityStore.standard().create(entity).map(_ => id)
   }
