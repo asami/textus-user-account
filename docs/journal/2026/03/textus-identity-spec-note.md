@@ -132,7 +132,26 @@ Responsibilities:
 
 ---
 
-# 7. Authentication Flow
+# 7. ViewSpace Authorization Policy
+
+View construction inside `ViewSpace` should run with privileged internal read semantics.
+
+This means:
+
+- view composition may read underlying entities with framework-internal authority
+- entity/object read permission is not the primary gate during view construction
+- authorization is enforced when the completed view is exposed to the caller
+
+In other words:
+
+- build phase: privileged internal read
+- exposure phase: operation/view access check
+
+This keeps view composition stable while preserving the external security boundary at the point where data is returned.
+
+---
+
+# 8. Authentication Flow
 
 ```
 Login(Command)
@@ -143,7 +162,7 @@ Login(Command)
 
 ---
 
-# 8. Event Model
+# 9. Event Model
 
 - UserCreated
 - PasswordChanged
@@ -154,7 +173,7 @@ Login(Command)
 
 ---
 
-# 9. Execution Model
+# 10. Execution Model
 
 All operations:
 
@@ -164,7 +183,7 @@ Operation → ActionCall → Task → Job
 
 ---
 
-# 10. Security Rules
+# 11. Security Rules
 
 - password stored as hash only
 - plain password exists only in Command
@@ -172,15 +191,19 @@ Operation → ActionCall → Task → Job
 
 ---
 
-# 11. UserAccount Boundary And Attribute Policy
+# 12. UserAccount Boundary And Attribute Policy
 
-`UserAccount` is kept narrow on purpose.
+`textus-user-account` should support attributes that are generally expected in enterprise systems, especially for EC-style business applications.
+
+`UserAccount` is still kept narrow on purpose.
 
 It is the account/identity/security object, not the full personal profile.
 
 Current `UserAccount` core attributes are:
 
 - `email`
+- `loginName`
+- `externalSubjectId`
 - `status`
 - inherited `SimpleEntity` attributes and quality/security metadata
 
@@ -213,6 +236,8 @@ The following are intentionally out of scope for `UserAccount`:
 
 Those belong to profile-oriented models, not the account core.
 
+If an application requires a substantially different account attribute model, it should provide its own user-management component corresponding to `textus-user-account` and configure CNCF to use that component instead.
+
 Validity-period style attributes such as:
 
 - `activatedAt`
@@ -223,7 +248,7 @@ should be considered on the `SimpleEntity` side rather than as `UserAccount`-spe
 
 ---
 
-# 12. UserProfile Policy
+# 13. UserProfile Policy
 
 `UserProfile` is an optional companion model.
 
@@ -237,9 +262,26 @@ This means:
 
 Application-specific profile-like structures are also allowed, but they should not be forced into `UserAccount`.
 
+If required user-facing information does not fit the generic `UserProfile`, the first extension path is to add an application-specific `UserRole` family object before replacing the whole account component.
+
+Current basic `UserProfile` shape:
+
+- `userAccountId`
+- `familyName`
+- `givenName`
+- `familyNameKana`
+- `givenNameKana`
+- `displayName`
+- `nickname`
+- `avatarUrl`
+- `birthday`
+- `locale`
+- `timeZone`
+- `address`
+
 ---
 
-# 13. UserRole Policy
+# 14. UserRole Policy
 
 `UserRole` is treated as an application-oriented extension point.
 
@@ -257,6 +299,12 @@ The intended shape is:
 It may carry attributes and can therefore represent application-specific information.
 
 This also means application-specific profile-like data may be modeled as a kind of `UserRole` family object.
+
+In short:
+
+- use `textus-user-account` when its enterprise-common account/profile model is sufficient
+- add application-specific `UserRole` objects when the missing data is role/profile-oriented
+- replace it with a custom user-management component only when the account model itself no longer fits
 
 ---
 
@@ -320,7 +368,7 @@ Current implementation scope:
 
 ---
 
-# 15. Implementation Inventory
+# 16. Implementation Inventory
 
 Provided now:
 
@@ -344,7 +392,7 @@ Deferred for the next phase:
 
 ---
 
-# 16. Future Extensions
+# 17. Future Extensions
 
 - credential separation
 - session management
@@ -353,7 +401,7 @@ Deferred for the next phase:
 
 ---
 
-# 17. Subsystem Descriptor Wiring Direction
+# 18. Subsystem Descriptor Wiring Direction
 
 When `textus-user-account` is deployed inside a subsystem, it should be treated as a human-authentication base component.
 

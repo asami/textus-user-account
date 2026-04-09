@@ -27,9 +27,9 @@ import org.simplemodeling.model.directive.{Condition, Update}
 import org.simplemodeling.model.statemachine.ActivationStatus
 import org.simplemodeling.model.value.{ResourceAttributes, ResourceAttributesUpdate}
 
-import org.simplemodeling.textus.useraccount.entity.{AccessSession => AccessSessionEntity, Credential => CredentialEntity, RefreshSession => RefreshSessionEntity, UserAccount => UserAccountEntity}
+import org.simplemodeling.textus.useraccount.entity.{AccessSession => AccessSessionEntity, Credential => CredentialEntity, RefreshSession => RefreshSessionEntity, UserAccount => UserAccountEntity, UserProfile => UserProfileEntity}
 import org.simplemodeling.textus.useraccount.entity.create.{AccessSession => AccessSessionCreate, Credential => CredentialCreate, RefreshSession => RefreshSessionCreate, UserAccount => UserAccountCreate}
-import org.simplemodeling.textus.useraccount.entity.query.{AccessSession => AccessSessionQuery, Credential => CredentialQuery, RefreshSession => RefreshSessionQuery, UserAccount => UserAccountQuery}
+import org.simplemodeling.textus.useraccount.entity.query.{AccessSession => AccessSessionQuery, Credential => CredentialQuery, RefreshSession => RefreshSessionQuery, UserAccount => UserAccountQuery, UserProfile => UserProfileQuery}
 import org.simplemodeling.textus.useraccount.entity.update.{AccessSession => AccessSessionUpdate, Credential => CredentialUpdate, RefreshSession => RefreshSessionUpdate, UserAccount => UserAccountUpdate}
 
 /*
@@ -78,6 +78,14 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       }
     )
 
+  override val view = new UserAccountComponent.ViewServiceFactory() {
+    override def createLoadUserProfileActionCall(
+      core: ActionCall.Core,
+      action: UserAccountComponent.ViewService.LoadUserProfileQuery
+    ): UserAccountComponent.ViewService.LoadUserProfileActionCall =
+      LoadUserProfileViewActionCallImpl(core, action)
+  }
+
   override val entityRuntimePlans: Vector[EntityRuntimePlan[Any]] =
     Vector(
       EntityRuntimePlan(
@@ -111,6 +119,14 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       ),
       EntityRuntimePlan(
         entityName = RefreshSessionQuery.collectionId.name,
+        memoryPolicy = EntityMemoryPolicy.StoreOnly,
+        workingSet = None,
+        partitionStrategy = PartitionStrategy.byOrganizationMonthUTC,
+        maxPartitions = 64,
+        maxEntitiesPerPartition = 10000
+      ),
+      EntityRuntimePlan(
+        entityName = UserProfileQuery.collectionId.name,
         memoryPolicy = EntityMemoryPolicy.StoreOnly,
         workingSet = None,
         partitionStrategy = PartitionStrategy.byOrganizationMonthUTC,
@@ -278,6 +294,8 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           name = Condition.any[Name],
           title = Condition.any[String],
           email = email.map(Condition.is[String]).getOrElse(Condition.any[String]),
+          loginName = Condition.any[String],
+          externalSubjectId = Condition.any[String],
           emailVerifiedAt = Condition.any[String],
           phoneNumber = Condition.any[String],
           phoneVerifiedAt = Condition.any[String],
@@ -1121,6 +1139,21 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
   ) extends UserService.RefreshAccessTokenActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       refreshAccessToken(action.record)
+
+  private final case class LoadUserProfileViewActionCallImpl(
+    core: ActionCall.Core,
+    override val action: UserAccountComponent.ViewService.LoadUserProfileQuery
+  ) extends UserAccountComponent.ViewService.LoadUserProfileActionCall, UserAccountActionSupport:
+    protected def build_Program: ExecUowM[OperationResponse] =
+      for
+        profile <- exec_from(
+          EntityStore
+            .standard()
+            .load[UserProfileEntity](action.id)(using summon, ExecutionContext.withAggregateInternalRead(executionContext, true))
+            .flatMap(x => Consequence.successOrEntityNotFound(x)(action.id))
+        )
+      yield
+        OperationResponse(profile.toRecord())
 
   private final case class ChangePasswordActionCallImpl(
     core: ActionCall.Core,

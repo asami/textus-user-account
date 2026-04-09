@@ -954,6 +954,8 @@ Core user profile and operational account state.
 | name              | type      | multiplicity | constraints |
 |-------------------+-----------+--------------+-------------|
 | email             | string    | 1            |             |
+| loginName         | string    | ?            |             |
+| externalSubjectId | string    | ?            |             |
 | emailVerifiedAt   | date-time | ?            |             |
 | phoneNumber       | string    | ?            | phone       |
 | phoneVerifiedAt   | date-time | ?            |             |
@@ -1013,6 +1015,33 @@ Core user profile and operational account state.
 ###### suspend
 
 ###### restore
+
+## UserProfile
+
+### features
+
+extends = ["SimpleEntity"]
+
+### DESCRIPTION
+
+Generic personal/profile companion model owned by a user account.
+
+### ATTRIBUTE
+
+| name           | type     | multiplicity | constraints |
+|----------------+----------+--------------+-------------|
+| userAccountId  | entityid | 1            |             |
+| familyName     | string   | ?            |             |
+| givenName      | string   | ?            |             |
+| familyNameKana | string   | ?            |             |
+| givenNameKana  | string   | ?            |             |
+| displayName    | string   | ?            |             |
+| nickname       | string   | ?            |             |
+| avatarUrl      | string   | ?            |             |
+| birthday       | string   | ?            |             |
+| locale         | string   | ?            |             |
+| timeZone       | string   | ?            |             |
+| address        | Address  | ?            |             |
 
 ## Credential
 

@@ -115,6 +115,8 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
         name = Condition.any[Name],
         title = Condition.any[String],
         email = Condition.any[String],
+        loginName = Condition.any[String],
+        externalSubjectId = Condition.any[String],
         emailVerifiedAt = Condition.any[String],
         phoneNumber = Condition.any[String],
         phoneVerifiedAt = Condition.any[String],
@@ -160,6 +162,14 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
       operationDefinitions.find(_.name == "updateUserStatus").flatMap(_.entityName) shouldBe Some("UserAccount")
       operationDefinitions.find(_.name == "deleteUserAccount").flatMap(_.entityName) shouldBe Some("UserAccount")
       operationDefinitions.find(_.name == "listUserAccounts").flatMap(_.entityName) shouldBe Some("UserAccount")
+    }
+
+    "expose aggregate and view definitions for user account profile composition" in {
+      val component = UserAccountComponent()
+      val userAccountAggregate = component.aggregateDefinitions.find(_.name == "user_account").getOrElse(fail("user_account aggregate missing"))
+      userAccountAggregate.members.exists(_.name == "user_profile") shouldBe true
+      component.aggregateDefinitions.exists(_.name == "user_profile") shouldBe true
+      component.viewDefinitions.exists(_.name == "user_profile") shouldBe true
     }
 
     "expose default access metadata for management operations via service policy" in {
@@ -515,6 +525,8 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
       mediaAttributes = MediaAttributes(None, Vector.empty, Vector.empty, Vector.empty, Vector.empty),
       contextualAttribute = ContextualAttributes(),
       email = email,
+      loginName = None,
+      externalSubjectId = None,
       emailVerifiedAt = None,
       phoneNumber = None,
       phoneVerifiedAt = None,

@@ -18,8 +18,9 @@ import org.simplemodeling.model.datatype.EntityId
 import org.simplemodeling.model.value.{AuditAttributes, ContextualAttributes, DescriptiveAttributes, LifecycleAttributes, MediaAttributes, NameAttributes, PublicationAttributes, ResourceAttributes, SecurityAttributes}
 import org.simplemodeling.textus.useraccount.entity.create.{AccessSession => AccessSessionCreateEntity}
 import org.simplemodeling.textus.useraccount.entity.create.{Credential => CredentialCreateEntity}
+import org.simplemodeling.textus.useraccount.entity.create.{UserProfile => UserProfileCreateEntity}
 import org.simplemodeling.textus.useraccount.entity.create.{UserAccount => UserAccountCreateEntity}
-import org.simplemodeling.textus.useraccount.entity.query.{AccessSession => AccessSessionQuery, RefreshSession => RefreshSessionQuery, UserAccount => UserAccountQuery}
+import org.simplemodeling.textus.useraccount.entity.query.{AccessSession => AccessSessionQuery, RefreshSession => RefreshSessionQuery, UserAccount => UserAccountQuery, UserProfile => UserProfileQuery}
 import org.simplemodeling.textus.useraccount.entity.update.{UserAccount => UserAccountUpdateEntity}
 import org.simplemodeling.textus.useraccount.entity.create.UserAccount.given
 import org.goldenport.cncf.entity.EntityStore
@@ -196,6 +197,56 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         extraAttributes = Map("access_token" -> token)
       )
       ComponentFactory.currentLoggedInUserId()(using authenticatedCtx).toOption shouldBe Some(userId)
+    }
+
+    "load user account aggregate with its user profile" in {
+      val component = _component()
+      val ownerPrincipalId = "aggregate_owner"
+      val ownerCtx = ExecutionContext.withSecurityContext(component.logic.executionContext(), _security_context(ownerPrincipalId))
+      given ExecutionContext = ownerCtx
+      val userId = _user_account_id("aggregate_profile")
+      _seed_user_account(userId, ownerPrincipalId, "aggregate-profile@example.com").toOption.isDefined shouldBe true
+      _seed_user_profile(userId, ownerPrincipalId).toOption.isDefined shouldBe true
+
+      val result = _execute_request(
+        component,
+        ownerCtx,
+        Request.ofService(
+          "aggregate",
+          "loadUserAccount",
+          properties = List(Property("id", userId.print, None))
+        )
+      )
+      result.toOption.isDefined shouldBe true
+    }
+
+    "load user profile view" in {
+      val component = _component()
+      val ownerPrincipalId = "view_owner"
+      val managerCtx = ExecutionContext.withSecurityContext(
+        component.logic.executionContext(),
+        _security_context("manager_principal", privilege = SecurityContext.Privilege.ApplicationContentManager)
+      )
+      given ExecutionContext = managerCtx
+      val userId = _user_account_id("view_profile")
+      val profileId = _user_profile_id("view_profile")
+      _seed_user_account(userId, ownerPrincipalId, "view-profile@example.com").toOption.isDefined shouldBe true
+      _seed_user_profile(userId, ownerPrincipalId, Some(profileId)).toOption.isDefined shouldBe true
+
+      val result = _execute_request(
+        component,
+        managerCtx,
+        Request.ofService(
+          "view",
+          "loadUserProfile",
+          properties = List(Property("id", profileId.print, None))
+        )
+      )
+      result.toOption.isDefined shouldBe true
+      val response = result.toOption.get.asInstanceOf[RecordResponse].record
+      response.getString("display_name") shouldBe Some("Integration User")
+      response.getString("nickname") shouldBe Some("integ-user")
+      response.getString("avatar_url") shouldBe Some("https://example.com/avatar/integration-user.png")
     }
 
     "logout should revoke only the current session pair" in {
@@ -912,6 +963,8 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       mediaAttributes = MediaAttributes(None, Vector.empty, Vector.empty, Vector.empty, Vector.empty),
       contextualAttribute = ContextualAttributes(),
       email = email,
+      loginName = None,
+      externalSubjectId = None,
       emailVerifiedAt = emailVerifiedAt,
       phoneNumber = phoneNumber,
       phoneVerifiedAt = phoneVerifiedAt,
@@ -1007,6 +1060,52 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
     EntityStore.standard().create(entity).map(_ => ())
   }
 
+  private def _seed_user_profile(
+    userId: EntityId,
+    ownerPrincipalId: String,
+    profileId: Option[EntityId] = None
+  )(using ExecutionContext) = {
+    val id = profileId.getOrElse(_user_profile_id("user_profile"))
+    val principal = ObjectId(Identifier(ownerPrincipalId))
+    val rights = SecurityAttributes.Rights(
+      SecurityAttributes.Rights.Permissions(read = true, write = true, execute = true),
+      SecurityAttributes.Rights.Permissions(read = true, write = false, execute = false),
+      SecurityAttributes.Rights.Permissions(read = true, write = false, execute = false)
+    )
+    val entity = UserProfileCreateEntity(
+      id = Some(id),
+      nameAttributes = NameAttributes.simple(Name("user_profile")),
+      descriptiveAttributes = DescriptiveAttributes.empty,
+      lifecycleAttributes = LifecycleAttributes(
+        java.time.ZonedDateTime.of(1970, 1, 1, 0, 0, 0, 0, java.time.ZoneOffset.UTC),
+        None,
+        Identifier("system"),
+        None,
+        org.simplemodeling.model.statemachine.PostStatus.default,
+        org.simplemodeling.model.statemachine.Aliveness.default
+      ),
+      publicationAttributes = PublicationAttributes(None, None, None, None, None),
+      securityAttributes = SecurityAttributes(principal, principal, rights, principal),
+      resourceAttributes = ResourceAttributes(),
+      auditAttributes = AuditAttributes(),
+      mediaAttributes = MediaAttributes(None, Vector.empty, Vector.empty, Vector.empty, Vector.empty),
+      contextualAttribute = ContextualAttributes(),
+      userAccountId = Some(userId),
+      familyName = Some("Integration"),
+      givenName = Some("User"),
+      familyNameKana = Some("インテグレーション"),
+      givenNameKana = Some("ユーザー"),
+      displayName = Some("Integration User"),
+      nickname = Some("integ-user"),
+      avatarUrl = Some("https://example.com/avatar/integration-user.png"),
+      birthday = Some("2000-01-01"),
+      locale = Some("ja-JP"),
+      timeZone = Some("Asia/Tokyo"),
+      address = None
+    )
+    EntityStore.standard().create(entity).map(_ => id)
+  }
+
   private def _seed_refresh_session(
     userId: EntityId,
     ownerPrincipalId: String,
@@ -1063,6 +1162,9 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
 
   private def _refresh_session_id(label: String): EntityId =
     _entity_id(RefreshSessionQuery.collectionId, label)
+
+  private def _user_profile_id(label: String): EntityId =
+    _entity_id(UserProfileQuery.collectionId, label)
 
   private def _entity_id(
     collectionId: org.simplemodeling.model.datatype.EntityCollectionId,
