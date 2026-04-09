@@ -528,7 +528,7 @@ Authentication result and runtime response payload.
 
 ##### DESCRIPTION
 
-Terminates the active session context for the user.
+Terminates the current session context for the user.
 
 ##### ACCESS
 
@@ -538,15 +538,47 @@ owner_or_manager
 
 ##### PRECONDITION
 
-The target account is currently active in the session/runtime context.
+The requester presents a current active session for the target account.
 
 ##### POSTCONDITION
 
-The target account is removed from the active working set.
+The current access session and linked refresh session are revoked.
 
 ##### IN
 
 Session/account context for sign-out.
+
+##### OUT
+
+Logout execution result.
+
+#### logoutAll
+
+##### DESCRIPTION
+
+Terminates all active session contexts for the user.
+
+##### ACCESS
+
+###### POLICY
+
+owner_or_manager
+
+##### ENTITY
+
+UserAccount
+
+##### PRECONDITION
+
+The target account is resolvable and is allowed by owner-or-manager policy.
+
+##### POSTCONDITION
+
+All access sessions and refresh sessions for the target account are revoked.
+
+##### IN
+
+Account context for full sign-out.
 
 ##### OUT
 
@@ -1119,6 +1151,18 @@ Command to terminate current user session context.
 |---------------+----------+--------------|
 | userAccountId | entityid | 1            |
 
+## UserLogoutAll
+
+### DESCRIPTION
+
+Command to terminate all user sessions for an account.
+
+### ATTRIBUTE
+
+| name          | type     | multiplicity |
+|---------------+----------+--------------|
+| userAccountId | entityid | 1            |
+
 ## UserChangePassword
 
 ### DESCRIPTION
@@ -1296,6 +1340,17 @@ COMMAND
 
 ### INPUT
 UserLogout
+
+### OUTPUT
+UserLogoutResult
+
+## logoutAll
+
+### TYPE
+COMMAND
+
+### INPUT
+UserLogoutAll
 
 ### OUTPUT
 UserLogoutResult

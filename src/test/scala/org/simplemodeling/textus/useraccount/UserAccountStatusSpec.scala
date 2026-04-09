@@ -175,6 +175,7 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
       operationDefinitions.find(_.name == "login").flatMap(_.access.map(_.policy)) shouldBe Some("anonymous_only")
       operationDefinitions.find(_.name == "refreshAccessToken").flatMap(_.access.map(_.policy)) shouldBe Some("anonymous_only")
       operationDefinitions.find(_.name == "logout").flatMap(_.access.map(_.policy)) shouldBe Some("owner_or_manager")
+      operationDefinitions.find(_.name == "logoutAll").flatMap(_.access.map(_.policy)) shouldBe Some("owner_or_manager")
       operationDefinitions.find(_.name == "changePassword").flatMap(_.access.map(_.policy)) shouldBe Some("owner_or_manager")
       operationDefinitions.find(_.name == "verifyMyEmail").flatMap(_.access.map(_.policy)) shouldBe Some("owner_or_manager")
       operationDefinitions.find(_.name == "verifyMyPhone").flatMap(_.access.map(_.policy)) shouldBe Some("owner_or_manager")
@@ -248,6 +249,34 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
         component,
         anonymousCtx,
         _dummy_action("User", "logout", "userAccountId" -> userId.print)
+      ).toOption.isDefined shouldBe false
+    }
+
+    "enforce owner-or-manager authorization for logoutAll during direct action execution" in {
+      val component = _component()
+      val fixture = _runtime_fixture()
+      val userId = EntityId("test", "logout_all", UserAccountQuery.collectionId)
+      val managerCtx = _execution_context(
+        fixture,
+        _security_context("manager_principal", SecurityContext.Privilege.ApplicationContentManager)
+      )
+      val anonymousCtx = _execution_context(
+        fixture,
+        _security_context("anonymous", SecurityContext.Privilege.User, withAccessToken = false, extraAttributes = Map("anonymous" -> "true"))
+      )
+      given ExecutionContext = managerCtx
+      _seed_user_account(userId, "logout_all_principal", "logout-all@example.com").toOption.isDefined shouldBe true
+
+      _execute(
+        component,
+        managerCtx,
+        _dummy_action("User", "logoutAll", "userAccountId" -> userId.print)
+      ).toOption.isDefined shouldBe true
+
+      _execute(
+        component,
+        anonymousCtx,
+        _dummy_action("User", "logoutAll", "userAccountId" -> userId.print)
       ).toOption.isDefined shouldBe false
     }
 

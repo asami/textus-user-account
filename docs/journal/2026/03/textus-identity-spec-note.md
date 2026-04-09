@@ -63,6 +63,8 @@ textus-session
 ### Session Safety
 
 - `refreshAccessToken` remains an anonymous entrypoint because the caller presents only the refresh token
+- `logout` revokes only the current access session and its linked refresh session
+- `logoutAll` revokes all access sessions and refresh sessions for the target account
 - refresh token rotation is mandatory
 - reuse of an already-rotated refresh token is treated as a session-family compromise signal
 - on detected refresh token reuse, remaining access sessions and refresh sessions for that user are revoked
@@ -318,7 +320,31 @@ Current implementation scope:
 
 ---
 
-# 15. Future Extensions
+# 15. Implementation Inventory
+
+Provided now:
+
+- `UserAccount`, `Credential`, `AccessSession`, and `RefreshSession` are modeled as separate persisted entities;
+- `login` issues an access token / refresh token pair;
+- `refreshAccessToken` rotates the refresh token and issues a new token pair;
+- refresh-token reuse is detected and treated as a compromise signal;
+- `logout` revokes only the current session pair;
+- `logoutAll` revokes all session pairs for the target account;
+- `changePassword` revokes all existing sessions after credential update;
+- `verifyMyEmail` and `verifyMyPhone` are wired as self-service protected operations;
+- `textus-user-account` provides a human-subject authentication provider for shared CNCF `SecurityContext` integration.
+
+Deferred for the next phase:
+
+- stronger password hashing than the current SHA-256 placeholder;
+- explicit refresh-session family modeling for audit and chain management;
+- SMS verification implementation beyond the current shape and note-level direction;
+- subsystem/service-subject authentication components outside `textus-user-account`;
+- MFA and OAuth/OIDC style external federation.
+
+---
+
+# 16. Future Extensions
 
 - credential separation
 - session management
@@ -327,11 +353,7 @@ Current implementation scope:
 
 ---
 
-End.
-
----
-
-# 15. Subsystem Descriptor Wiring Direction
+# 17. Subsystem Descriptor Wiring Direction
 
 When `textus-user-account` is deployed inside a subsystem, it should be treated as a human-authentication base component.
 
@@ -348,3 +370,7 @@ In descriptor terms, `textus-user-account` should appear as a `security.authenti
 - `schemes = bearer, refresh-token`
 
 This keeps `textus-user-account` responsible for human subject/session resolution while CNCF owns common security-context composition and provider selection.
+
+---
+
+End.

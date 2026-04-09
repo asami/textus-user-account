@@ -198,6 +198,100 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       ComponentFactory.currentLoggedInUserId()(using authenticatedCtx).toOption shouldBe Some(userId)
     }
 
+    "logout should revoke only the current session pair" in {
+      val fixture = _fixture()
+      val component = _component()
+      given ExecutionContext = fixture.executionContext
+      val ownerPrincipalId = "logout_current_owner"
+      val userId = _user_account_id("logout_current")
+      val currentAccessToken = "access-token-current"
+      val currentRefreshToken = "refresh-token-current"
+      val otherAccessToken = "access-token-other"
+      val otherRefreshToken = "refresh-token-other"
+      _seed_user_account(userId, ownerPrincipalId, "logout-current@example.com").toOption.isDefined shouldBe true
+      val currentRefreshId = _seed_refresh_session(userId, ownerPrincipalId, currentRefreshToken).toOption.get
+      _seed_access_session(userId, ownerPrincipalId, currentAccessToken, Some(currentRefreshId)).toOption.isDefined shouldBe true
+      _seed_refresh_session(userId, ownerPrincipalId, otherRefreshToken).toOption.isDefined shouldBe true
+      _seed_access_session(userId, ownerPrincipalId, otherAccessToken, None).toOption.isDefined shouldBe true
+
+      val authenticatedCtx = _with_security(
+        fixture,
+        ownerPrincipalId,
+        extraAttributes = Map(
+          "access_token" -> currentAccessToken,
+          "refresh_token" -> currentRefreshToken
+        )
+      )
+      val result = _execute_request(
+        component,
+        authenticatedCtx,
+        Request.ofService(
+          "User",
+          "logout",
+          properties = List(Property("userAccountId", userId.print, None))
+        )
+      )
+      result.toOption.isDefined shouldBe true
+
+      val refreshCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId).toOption.get
+      val refreshRecords = summon[ExecutionContext].dataStoreSpace.search(refreshCid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
+      val revokedRefreshCount = refreshRecords.count(r => r.getString("user_account_id").contains(userId.print) && r.getString("revoked_at").nonEmpty)
+      revokedRefreshCount shouldBe 1
+      val activeRefreshCount = refreshRecords.count(r => r.getString("user_account_id").contains(userId.print) && r.getString("revoked_at").isEmpty)
+      activeRefreshCount shouldBe 1
+
+      val accessCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId).toOption.get
+      val accessRecords = summon[ExecutionContext].dataStoreSpace.search(accessCid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
+      val revokedAccessCount = accessRecords.count(r => r.getString("user_account_id").contains(userId.print) && r.getString("revoked_at").nonEmpty)
+      revokedAccessCount shouldBe 1
+      val activeAccessCount = accessRecords.count(r => r.getString("user_account_id").contains(userId.print) && r.getString("revoked_at").isEmpty)
+      activeAccessCount shouldBe 1
+    }
+
+    "logoutAll should revoke all session pairs for the account" in {
+      val fixture = _fixture()
+      val component = _component()
+      given ExecutionContext = fixture.executionContext
+      val ownerPrincipalId = "logout_all_owner"
+      val userId = _user_account_id("logout_all")
+      val currentAccessToken = "access-token-all-current"
+      val currentRefreshToken = "refresh-token-all-current"
+      _seed_user_account(userId, ownerPrincipalId, "logout-all@example.com").toOption.isDefined shouldBe true
+      val refreshId1 = _seed_refresh_session(userId, ownerPrincipalId, currentRefreshToken).toOption.get
+      _seed_access_session(userId, ownerPrincipalId, currentAccessToken, Some(refreshId1)).toOption.isDefined shouldBe true
+      _seed_refresh_session(userId, ownerPrincipalId, "refresh-token-all-other").toOption.isDefined shouldBe true
+      _seed_access_session(userId, ownerPrincipalId, "access-token-all-other", None).toOption.isDefined shouldBe true
+
+      val authenticatedCtx = _with_security(
+        fixture,
+        ownerPrincipalId,
+        extraAttributes = Map(
+          "access_token" -> currentAccessToken,
+          "refresh_token" -> currentRefreshToken
+        )
+      )
+      val result = _execute_request(
+        component,
+        authenticatedCtx,
+        Request.ofService(
+          "User",
+          "logoutAll",
+          properties = List(Property("userAccountId", userId.print, None))
+        )
+      )
+      result.toOption.isDefined shouldBe true
+
+      val refreshCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId).toOption.get
+      val refreshRecords = summon[ExecutionContext].dataStoreSpace.search(refreshCid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
+      val activeRefreshCount = refreshRecords.count(r => r.getString("user_account_id").contains(userId.print) && r.getString("revoked_at").isEmpty)
+      activeRefreshCount shouldBe 0
+
+      val accessCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId).toOption.get
+      val accessRecords = summon[ExecutionContext].dataStoreSpace.search(accessCid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
+      val activeAccessCount = accessRecords.count(r => r.getString("user_account_id").contains(userId.print) && r.getString("revoked_at").isEmpty)
+      activeAccessCount shouldBe 0
+    }
+
     "rotate refresh token and issue a new token pair" in {
       val fixture = _fixture()
       val component = _component()
@@ -870,7 +964,8 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
   private def _seed_access_session(
     userId: EntityId,
     ownerPrincipalId: String,
-    token: String
+    token: String,
+    refreshSessionId: Option[EntityId] = None
   )(using ExecutionContext) = {
     val sessionId = _access_session_id("access_session")
     val principal = ObjectId(Identifier(ownerPrincipalId))
@@ -898,7 +993,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       mediaAttributes = MediaAttributes(None, Vector.empty, Vector.empty, Vector.empty, Vector.empty),
       contextualAttribute = ContextualAttributes(),
       userAccountId = Some(userId),
-      refreshSessionId = None,
+      refreshSessionId = refreshSessionId.map(_.print),
       tokenHash = _password_hash(token),
       issuedAt = "2026-04-09T00:00:00Z",
       expiresAt = "2099-01-01T00:00:00Z",

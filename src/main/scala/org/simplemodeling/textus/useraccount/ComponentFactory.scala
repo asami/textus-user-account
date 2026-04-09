@@ -150,6 +150,12 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     ): UserService.LogoutActionCall =
       LogoutActionCallImpl(core, action)
 
+    override def createLogoutAllActionCall(
+      core: ActionCall.Core,
+      action: UserService.LogoutAllCommand
+    ): UserService.LogoutAllActionCall =
+      LogoutAllActionCallImpl(core, action)
+
     override def createRefreshAccessTokenActionCall(
       core: ActionCall.Core,
       action: UserService.RefreshAccessTokenCommand
@@ -330,8 +336,18 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       for
         userId <- exec_from(requiredEntityId(record, List("userAccountId", "user_account_id", "id")))
         _ <- requireUserSession(userId)
-        _ <- revokeCurrentAccessSession(userId)
-        _ <- revokeCurrentRefreshSession(userId)
+        accessSession <- requireCurrentAccessSession(userId)
+        _ <- revokeAccessSession(accessSession.id)
+        _ <- revokeLinkedRefreshSession(accessSession)
+        _ <- exec_from(removeLoggedInUser(userId))
+      yield
+        OperationResponse.void
+
+    protected final def logoutAll(record: Record): ExecUowM[OperationResponse] =
+      for
+        userId <- exec_from(requiredEntityId(record, List("userAccountId", "user_account_id", "id")))
+        _ <- revokeAllAccessSessions(userId)
+        _ <- revokeAllRefreshSessions(userId)
         _ <- exec_from(removeLoggedInUser(userId))
       yield
         OperationResponse.void
@@ -739,33 +755,41 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       yield
         ComponentFactory.IssuedRefreshSession(created.id, rawToken)
 
-    private def revokeCurrentAccessSession(userId: EntityId): ExecUowM[Unit] =
+    private def requireCurrentAccessSession(userId: EntityId): ExecUowM[AccessSessionEntity] =
       currentAccessToken() match
         case Some(token) =>
           for
             sessions <- rawAccessSessionsByTokenHash(tokenHash(token))
-            current = sessions.find(_.userAccountId == userId)
-            _ <- current match
-              case Some(session) => revokeAccessSession(session.id)
-              case None => revokeAllAccessSessions(userId)
+            session <- exec_from(
+              sessions.find(session => session.userAccountId == userId && ComponentFactory._is_active_access_session(session)) match
+                case Some(x) => Consequence.success(x)
+                case None => Consequence.failure("No current access session matches the target account.")
+            )
           yield
-            ()
+            session
         case None =>
-          revokeAllAccessSessions(userId)
+          exec_from(Consequence.failure("No current access token is available for logout."))
 
-    private def revokeCurrentRefreshSession(userId: EntityId): ExecUowM[Unit] =
-      currentRefreshToken() match
-        case Some(token) =>
+    private def revokeLinkedRefreshSession(accessSession: AccessSessionEntity): ExecUowM[Unit] =
+      accessSession.refreshSessionId match
+        case Some(refreshId) =>
           for
-            sessions <- rawRefreshSessionsByTokenHash(tokenHash(token))
-            current = sessions.find(_.userAccountId == userId)
-            _ <- current match
-              case Some(session) => revokeRefreshSession(session.id)
-              case None => revokeAllRefreshSessions(userId)
+            id <- exec_from(EntityId.parse(refreshId))
+            _ <- revokeRefreshSession(id)
           yield
             ()
         case None =>
-          revokeAllRefreshSessions(userId)
+          currentRefreshToken() match
+            case Some(token) =>
+              for
+                sessions <- rawRefreshSessionsByTokenHash(tokenHash(token))
+                _ <- sessions.find(_.userAccountId == accessSession.userAccountId) match
+                  case Some(session) => revokeRefreshSession(session.id)
+                  case None => exec_pure(())
+              yield
+                ()
+            case None =>
+              exec_pure(())
 
     private def revokeAccessSession(sessionId: EntityId): ExecUowM[Unit] =
       for
@@ -1083,6 +1107,13 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
   ) extends UserService.LogoutActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       logout(action.record)
+
+  private final case class LogoutAllActionCallImpl(
+    core: ActionCall.Core,
+    override val action: UserService.LogoutAllCommand
+  ) extends UserService.LogoutAllActionCall, UserAccountActionSupport:
+    protected def build_Program: ExecUowM[OperationResponse] =
+      logoutAll(action.record)
 
   private final case class RefreshAccessTokenActionCallImpl(
     core: ActionCall.Core,
