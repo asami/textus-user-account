@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Textus Account Sign Up</title>
+  <link href="/web/assets/bootstrap.min.css" rel="stylesheet">
+  <link href="/web/assets/textus-widgets.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+  <main class="container py-5">
+    <div class="row justify-content-center">
+      <div class="col-12 col-md-8 col-lg-6">
+        <div class="card shadow-sm">
+          <div class="card-body p-4">
+            <p class="text-uppercase text-muted small mb-2">Textus User Account</p>
+            <h1 class="h3 mb-3">Create account</h1>
+            <p class="text-secondary">Register a standard account, then continue through the sign-in flow.</p>
+            <div id="signup-error" class="alert alert-danger d-none" role="alert"></div>
+            <form id="signup-form">
+              <div class="mb-3">
+                <label class="form-label" for="name">Display name</label>
+                <input class="form-control" id="name" name="name" autocomplete="name" required>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="title">Title</label>
+                <input class="form-control" id="title" name="title" value="member" required>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="email">Email</label>
+                <input class="form-control" id="email" name="email" type="email" autocomplete="email" required>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="password">Password</label>
+                <input class="form-control" id="password" name="password" type="password" autocomplete="new-password" required>
+              </div>
+              <div class="d-grid gap-2">
+                <button class="btn btn-primary" type="submit">Create account</button>
+                <a id="signin-link" class="btn btn-outline-secondary" href="#">Back to sign in</a>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script>
+    (function() {
+      const form = document.getElementById("signup-form");
+      const error = document.getElementById("signup-error");
+      const params = new URLSearchParams(window.location.search);
+      const returnTo = params.get("returnTo") || "/web/cwitter";
+      const pathname = window.location.pathname;
+      const signinPath = pathname.endsWith("/signup") ? pathname.replace(/\/signup$/, pathname.includes("/textus-user-account/") ? "/signin" : "/login") : "/web/cwitter/login";
+      document.getElementById("signin-link").setAttribute("href", signinPath + "?returnTo=" + encodeURIComponent(returnTo));
+      form.addEventListener("submit", async function(event) {
+        event.preventDefault();
+        error.classList.add("d-none");
+        error.textContent = "";
+        const body = new URLSearchParams(new FormData(form));
+        const response = await fetch("/form-api/textus-user-account/user/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          credentials: "same-origin",
+          body
+        });
+        if (response.ok) {
+          window.location.href = signinPath + "?returnTo=" + encodeURIComponent(returnTo);
+          return;
+        }
+        const text = await response.text();
+        error.textContent = text || ("Registration failed (" + response.status + ").");
+        error.classList.remove("d-none");
+      });
+    })();
+  </script>
+</body>
+</html>

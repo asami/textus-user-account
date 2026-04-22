@@ -1,0 +1,12 @@
+defaultView: summary
+apps:
+  - name: signin
+    kind: static-form
+    path: /web/textus-user-account/signin
+    root: /web/signin
+    route: /web/textus-user-account/signin
+  - name: signup
+    kind: static-form
+    path: /web/textus-user-account/signup
+    root: /web/signup
+    route: /web/textus-user-account/signup
