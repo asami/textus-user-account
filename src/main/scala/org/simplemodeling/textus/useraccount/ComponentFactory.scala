@@ -11,7 +11,9 @@ import org.goldenport.Consequence
 import org.goldenport.datatype.Name
 import org.simplemodeling.model.datatype.EntityId
 import org.goldenport.protocol.operation.OperationResponse
+import org.goldenport.protocol.operation.OperationResponse.RecordResponse
 import org.goldenport.record.Record
+import org.goldenport.protocol.{Property, Request}
 import org.goldenport.cncf.action.ActionCall
 import org.goldenport.cncf.component.{Component, ComponentCreate, EntityRuntimePlanProvider}
 import org.goldenport.cncf.CncfVersion
@@ -35,7 +37,7 @@ import org.simplemodeling.textus.useraccount.entity.update.{AccessSession => Acc
 /*
  * @since   Mar. 23, 2026
  *  version Mar. 24, 2026
- * @version Apr.  9, 2026
+ * @version Apr. 23, 2026
  * @author  ASAMI, Tomoharu
  */
 class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePlanProvider:
@@ -70,13 +72,11 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
   ): Option[Consequence[Unit]] =
     None
 
-  override protected def create_Components(params: ComponentCreate): Vector[Component] =
-    Vector(
-      new UserAccountComponent() {
-        override def authenticationProviders: Vector[AuthenticationProvider] =
-          Vector(ComponentFactory.UserAccountAuthenticationProvider)
-      }
-    )
+  override protected def create_Component(params: ComponentCreate): Component =
+    new UserAccountComponent() {
+      override def authenticationProviders: Vector[AuthenticationProvider] =
+        Vector(ComponentFactory.userAccountAuthenticationProvider(this))
+    }
 
   override val view = new UserAccountComponent.ViewServiceFactory() {
     override def createLoadUserProfileActionCall(
@@ -1426,7 +1426,9 @@ object ComponentFactory:
     OperationAccessPolicy.authorizeManagerOnly()
 
   def currentLoggedInUserId()(using ctx: ExecutionContext): Consequence[EntityId] =
-    _current_logged_in_user_id_from_access_token().orElse(LoginWorkingSet.currentUserId())
+    _current_logged_in_user_id_from_session_id()
+      .orElse(_current_logged_in_user_id_from_access_token())
+      .orElse(LoginWorkingSet.currentUserId())
 
   def currentLoggedInUserId(id: EntityId)(using ctx: ExecutionContext): Consequence[EntityId] =
     currentLoggedInUserId().flatMap { current =>
@@ -1438,6 +1440,13 @@ object ComponentFactory:
 
   def generateToken(): String =
     UUID.randomUUID().toString.replace("-", "") + UUID.randomUUID().toString.replace("-", "")
+
+  private def _current_logged_in_user_id_from_session_id()(using ctx: ExecutionContext): Consequence[EntityId] =
+    ctx.security.session.flatMap(_.sessionId).filter(_.trim.nonEmpty) match
+      case Some(sessionId) =>
+        _restore_access_session_by_id(sessionId).map(_.userAccountId)
+      case None =>
+        Consequence.failure("No session id is available in security context.")
 
   private def _current_logged_in_user_id_from_access_token()(using ctx: ExecutionContext): Consequence[EntityId] =
     ctx.security.principal.attributes.get("access_token").filter(_.trim.nonEmpty) match
@@ -1481,6 +1490,9 @@ object ComponentFactory:
   private def _is_active_access_session(session: AccessSessionEntity): Boolean =
     session.revokedAt.isEmpty && !_is_expired(session.expiresAt)
 
+  private def _is_revoked_access_session(session: AccessSessionEntity): Boolean =
+    session.revokedAt.nonEmpty
+
   def isActiveRefreshSession(session: RefreshSessionEntity): Boolean =
     session.revokedAt.isEmpty && session.rotatedAt.isEmpty && !_is_expired(session.expiresAt)
 
@@ -1495,18 +1507,369 @@ object ComponentFactory:
     val bytes = digest.digest(token.getBytes(StandardCharsets.UTF_8))
     bytes.map(b => f"${b & 0xff}%02x").mkString
 
-  object UserAccountAuthenticationProvider extends AuthenticationProvider {
+  def userAccountAuthenticationProvider(component: Component): AuthenticationProvider =
+    new UserAccountAuthenticationProvider(component)
+
+  private final class UserAccountAuthenticationProvider(component: Component) extends AuthenticationProvider {
     val name: String = "textus-user-account"
 
     def authenticate(request: AuthenticationRequest)(using ctx: ExecutionContext): Consequence[Option[AuthenticationResult]] =
-      request.accessToken match
-        case Some(token) =>
-          authenticateAccessToken(token).map(Some(_))
+      _request_session_id(request) match
+        case Some(sessionId) =>
+          authenticateSessionId(sessionId).map(Some(_))
         case None =>
-          request.refreshToken match
-            case Some(token) => authenticateRefreshToken(token).map(Some(_))
-            case None => Consequence.success(None)
+          request.accessToken match
+            case Some(token) =>
+              authenticateAccessToken(token).map(Some(_))
+            case None =>
+              request.refreshToken match
+                case Some(token) => authenticateRefreshToken(token).map(Some(_))
+                case None => Consequence.success(None)
+
+    override def login(request: AuthenticationRequest)(using ctx: ExecutionContext): Consequence[Option[AuthenticationResult]] =
+      _provider_login(component, request)
+
+    override def logout(request: AuthenticationRequest)(using ctx: ExecutionContext): Consequence[Option[SessionContext]] =
+      _request_session_id(request) match
+        case Some(sessionId) =>
+          logoutSessionId(sessionId).map(Some(_))
+        case None =>
+          Consequence.success(None)
+
+    override def currentSession(request: AuthenticationRequest)(using ctx: ExecutionContext): Consequence[Option[AuthenticationResult]] =
+      _request_session_id(request) match
+        case Some(sessionId) =>
+          authenticateSessionId(sessionId).map(Some(_))
+        case None =>
+          authenticate(request)
   }
+
+  private def _provider_login(
+    component: Component,
+    request: AuthenticationRequest
+  )(using ctx: ExecutionContext): Consequence[Option[AuthenticationResult]] =
+    for
+      identifier <- _required_login_identifier(request)
+      password <- _required_login_password(request)
+      email <- _resolve_login_email(identifier)
+      response <- _execute_request(
+        component,
+        ctx,
+        Request.ofService(
+          "User",
+          "login",
+          properties = List(
+            Property("email", email, None),
+            Property("password", password, None)
+          )
+        )
+      )
+      result <- _provider_login_result(response)
+    yield
+      Some(result)
+
+  private def _request_session_id(
+    request: AuthenticationRequest
+  ): Option[String] =
+    Vector(
+      "x-textus-session",
+      "session_id",
+      "sessionId",
+      "textus.session"
+    ).iterator.flatMap(request.attribute).collectFirst {
+      case value if value.trim.nonEmpty => value.trim
+    }
+
+  private def _required_login_identifier(
+    request: AuthenticationRequest
+  ): Consequence[String] =
+    Vector("email", "username", "loginName", "login_name")
+      .iterator
+      .flatMap(request.attribute)
+      .collectFirst {
+        case value if value.trim.nonEmpty => value.trim
+      }
+      .map(Consequence.success)
+      .getOrElse(Consequence.failure("login identifier is required"))
+
+  private def _required_login_password(
+    request: AuthenticationRequest
+  ): Consequence[String] =
+    request.attribute("password")
+      .filter(_.trim.nonEmpty)
+      .map(_.trim)
+      .map(Consequence.success)
+      .getOrElse(Consequence.failure("password is required"))
+
+  private def _resolve_login_email(
+    identifier: String
+  )(using ctx: ExecutionContext): Consequence[String] =
+    if (identifier.contains("@"))
+      Consequence.success(identifier)
+    else
+      _raw_user_accounts_by_login_name(identifier).map {
+        _.headOption.map(_.email).getOrElse(identifier)
+      }
+
+  private def _provider_login_result(
+    response: OperationResponse
+  )(using ctx: ExecutionContext): Consequence[AuthenticationResult] =
+    response match
+      case RecordResponse(record) =>
+        record.getString("accessSessionId")
+          .orElse(record.getString("access_session_id")) match
+          case Some(sessionId) if sessionId.trim.nonEmpty =>
+            authenticateSessionId(sessionId.trim)
+          case _ =>
+            Consequence.failure("textus-user-account login did not return accessSessionId")
+      case other =>
+        Consequence.failure(s"textus-user-account login returned unexpected response: ${other.getClass.getSimpleName}")
+
+  private def _execute_request(
+    component: Component,
+    ctx: ExecutionContext,
+    request: Request
+  ): Consequence[OperationResponse] =
+    component.logic.makeOperationRequest(request).flatMap {
+      case action: org.goldenport.cncf.action.Action =>
+        val call = component.logic.createActionCall(action, ctx)
+        component.actionEngine.execute(call)
+      case other =>
+        Consequence.failure(s"request did not resolve to action: $other")
+    }
+
+  def authenticateSessionId(
+    sessionId: String
+  )(using ctx: ExecutionContext): Consequence[AuthenticationResult] =
+    for
+      session <- _restore_access_session_by_id(sessionId)
+      user <- _load_user_account(session.userAccountId)
+    yield
+      _authentication_result(user, session)
+
+  def logoutSessionId(
+    sessionId: String
+  )(using ctx: ExecutionContext): Consequence[SessionContext] =
+    for
+      session <- _load_access_session_by_id(sessionId)
+      _ <- if (_is_revoked_access_session(session))
+        Consequence.failure("invalid session")
+      else
+        Consequence.unit
+      _ <- _revoke_access_session_direct(session.id)
+      _ <- _revoke_linked_refresh_session(session)
+    yield
+      SessionContext(sessionId = Some(session.id.print), tokenId = Some(session.id.print), tokenKind = Some("access"))
+
+  private def _restore_access_session_by_id(
+    sessionId: String
+  )(using ctx: ExecutionContext): Consequence[AccessSessionEntity] =
+    for
+      session <- _load_access_session_by_id(sessionId)
+      restored <-
+        if (_is_active_access_session(session))
+          _touch_access_session(session.id).map(_ => session.copy(lastAccessedAt = Some(Instant.now.toString)))
+        else if (_is_revoked_access_session(session))
+          Consequence.failure("invalid session")
+        else
+          _rotate_internal_session_state(session)
+    yield
+      restored
+
+  private def _rotate_internal_session_state(
+    session: AccessSessionEntity
+  )(using ctx: ExecutionContext): Consequence[AccessSessionEntity] =
+    session.refreshSessionId match
+      case Some(refreshIdText) =>
+        for
+          refreshId <- EntityId.parse(refreshIdText)
+          refresh <- _load_refresh_session(refreshId)
+          _ <- if (isActiveRefreshSession(refresh)) Consequence.unit else Consequence.failure("invalid session")
+          successor <- _issue_refresh_session_direct(
+            refresh.userAccountId,
+            None,
+            refresh.clientId,
+            refresh.deviceInfo,
+            refresh.ipAddress,
+            refresh.userAgent,
+            predecessor = Some(refresh.id)
+          )
+          now = Instant.now
+          _ <- _update_refresh_session_fields_direct(
+            refresh.id,
+            Record.dataAuto(
+              "revoked_at" -> now.toString,
+              "rotated_at" -> now.toString,
+              "successor_session_id" -> successor.id.print
+            )
+          )
+          _ <- _update_access_session_fields_direct(
+            session.id,
+            Record.dataAuto(
+              "refresh_session_id" -> successor.id.print,
+              "token_hash" -> _token_hash(generateToken()),
+              "issued_at" -> now.toString,
+              "expires_at" -> now.plusSeconds(AccessSessionTtlSeconds.toLong).toString,
+              "last_accessed_at" -> now.toString,
+              "client_id" -> refresh.clientId,
+              "device_info" -> refresh.deviceInfo,
+              "ip_address" -> refresh.ipAddress,
+              "user_agent" -> refresh.userAgent
+            )
+          )
+          restored <- _load_access_session(session.id)
+        yield
+          restored
+      case None =>
+        Consequence.failure("invalid session")
+
+  private def _load_access_session_by_id(
+    sessionId: String
+  )(using ctx: ExecutionContext): Consequence[AccessSessionEntity] =
+    for
+      id <- EntityId.parse(sessionId)
+      session <- _load_access_session(id)
+    yield
+      session
+
+  private def _load_access_session(
+    sessionId: EntityId
+  )(using ctx: ExecutionContext): Consequence[AccessSessionEntity] =
+    EntityStore.standard().load[AccessSessionEntity](sessionId).flatMap(x => Consequence.successOrEntityNotFound(x)(sessionId))
+
+  private def _load_refresh_session(
+    sessionId: EntityId
+  )(using ctx: ExecutionContext): Consequence[RefreshSessionEntity] =
+    EntityStore.standard().load[RefreshSessionEntity](sessionId).flatMap(x => Consequence.successOrEntityNotFound(x)(sessionId))
+
+  private def _issue_refresh_session_direct(
+    userId: EntityId,
+    requestedToken: Option[String],
+    clientId: Option[String],
+    deviceInfo: Option[String],
+    ipAddress: Option[String],
+    userAgent: Option[String],
+    predecessor: Option[EntityId] = None
+  )(using ctx: ExecutionContext): Consequence[RefreshSessionEntity] =
+    for
+      now <- Consequence.success(Instant.now)
+      rawToken <- Consequence.success(requestedToken.filter(_.trim.nonEmpty).getOrElse(generateToken()))
+      sessionRecord = Record.dataAuto(
+        "userAccountId" -> userId,
+        "tokenHash" -> _token_hash(rawToken),
+        "issuedAt" -> now.toString,
+        "expiresAt" -> now.plusSeconds(RefreshSessionTtlSeconds.toLong).toString,
+        "clientId" -> clientId,
+        "deviceInfo" -> deviceInfo,
+        "ipAddress" -> ipAddress,
+        "userAgent" -> userAgent
+      )
+      session0 <- RefreshSessionCreate.createWithExecutionContextC(sessionRecord)
+      session = session0.withResourceAttributes(ResourceAttributes(activationStatus = ActivationStatus.Active))
+      created <- EntityStore.standard().create(session)
+      _ <- predecessor match
+        case Some(previousId) =>
+          _update_refresh_session_fields_direct(
+            previousId,
+            Record.dataAuto("successor_session_id" -> created.id.print)
+          )
+        case None =>
+          Consequence.unit
+      stored <- _load_refresh_session(created.id)
+    yield
+      stored
+
+  private def _touch_access_session(
+    sessionId: EntityId
+  )(using ctx: ExecutionContext): Consequence[Unit] =
+    _update_access_session_fields_direct(
+      sessionId,
+      Record.dataAuto("last_accessed_at" -> Instant.now.toString)
+    )
+
+  private def _revoke_access_session_direct(
+    sessionId: EntityId
+  )(using ctx: ExecutionContext): Consequence[Unit] =
+    _update_access_session_fields_direct(
+      sessionId,
+      Record.dataAuto(
+        "revoked_at" -> Instant.now.toString,
+        "last_accessed_at" -> Instant.now.toString
+      )
+    )
+
+  private def _revoke_refresh_session_direct(
+    sessionId: EntityId
+  )(using ctx: ExecutionContext): Consequence[Unit] =
+    _update_refresh_session_fields_direct(
+      sessionId,
+      Record.dataAuto("revoked_at" -> Instant.now.toString)
+    )
+
+  private def _revoke_linked_refresh_session(
+    accessSession: AccessSessionEntity
+  )(using ctx: ExecutionContext): Consequence[Unit] =
+    accessSession.refreshSessionId match
+      case Some(refreshIdText) =>
+        for
+          refreshId <- EntityId.parse(refreshIdText)
+          _ <- _revoke_refresh_session_direct(refreshId)
+        yield
+          ()
+      case None =>
+        Consequence.unit
+
+  private def _update_refresh_session_fields_direct(
+    sessionId: EntityId,
+    changes: Record
+  )(using ctx: ExecutionContext): Consequence[Unit] =
+    for
+      cid <- ctx.entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId)
+      ds <- ctx.dataStoreSpace.dataStore(cid)
+      _ <- ds.update(
+        cid,
+        org.goldenport.cncf.datastore.DataStore.EntryId(sessionId),
+        changes
+      )
+    yield
+      ()
+
+  private def _update_access_session_fields_direct(
+    sessionId: EntityId,
+    changes: Record
+  )(using ctx: ExecutionContext): Consequence[Unit] =
+    for
+      cid <- ctx.entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId)
+      ds <- ctx.dataStoreSpace.dataStore(cid)
+      _ <- ds.update(
+        cid,
+        org.goldenport.cncf.datastore.DataStore.EntryId(sessionId),
+        changes
+      )
+    yield
+      ()
+
+  private def _raw_user_accounts_by_login_name(
+    loginName: String
+  )(using ctx: ExecutionContext): Consequence[Vector[UserAccountEntity]] =
+    for
+      cid <- ctx.entityStoreSpace.dataStoreCollection(UserAccountQuery.collectionId)
+      result <- ctx.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))
+      ids <- result.records.toVector
+        .filter(_.getString("login_name").contains(loginName))
+        .traverse(record =>
+          record
+            .getAsC[EntityId]("id")
+            .flatMap(x => Consequence.successOrPropertyNotFound("id", x))
+        )
+      users <- ids.traverse(id =>
+        EntityStore
+          .standard()
+          .load[UserAccountEntity](id)
+          .flatMap(x => Consequence.successOrEntityNotFound(x)(id))
+      )
+    yield
+      users
 
   def authenticateAccessToken(
     accessToken: String
@@ -1574,8 +1937,10 @@ object ComponentFactory:
         "user_account_id" -> user.id.print,
         "role" -> "user",
         "privilege" -> "user",
+        "email" -> user.email,
+        "login_name" -> user.loginName.orNull,
         "access_token" -> accessToken
-      ),
+      ).collect { case (k, v) if v != null && v.nonEmpty => k -> v },
       capabilities = Set(Capability("user")),
       level = SecurityLevel("user"),
       subjectKind = SubjectKind.User,
@@ -1603,8 +1968,10 @@ object ComponentFactory:
         "user_account_id" -> user.id.print,
         "role" -> "user",
         "privilege" -> "user",
+        "email" -> user.email,
+        "login_name" -> user.loginName.orNull,
         "refresh_token" -> refreshToken
-      ),
+      ).collect { case (k, v) if v != null && v.nonEmpty => k -> v },
       capabilities = Set(Capability("user")),
       level = SecurityLevel("user"),
       subjectKind = SubjectKind.User,
@@ -1616,6 +1983,36 @@ object ComponentFactory:
           authenticatedAt = _parse_instant(session.issuedAt),
           expiresAt = _parse_instant(session.expiresAt),
           refreshSessionId = Some(session.id.print),
+          attributes = _session_attributes(session.clientId, session.deviceInfo, session.ipAddress, session.userAgent)
+        )
+      )
+    )
+
+
+  private def _authentication_result(
+    user: UserAccountEntity,
+    session: AccessSessionEntity
+  ): AuthenticationResult =
+    AuthenticationResult(
+      principalId = PrincipalId(user.id.print),
+      attributes = Map(
+        "user_account_id" -> user.id.print,
+        "role" -> "user",
+        "privilege" -> "user",
+        "email" -> user.email,
+        "login_name" -> user.loginName.orNull
+      ).collect { case (k, v) if v != null && v.nonEmpty => k -> v },
+      capabilities = Set(Capability("user")),
+      level = SecurityLevel("user"),
+      subjectKind = SubjectKind.User,
+      session = Some(
+        SessionContext(
+          sessionId = Some(session.id.print),
+          tokenId = Some(session.id.print),
+          tokenKind = Some("access"),
+          authenticatedAt = _parse_instant(session.issuedAt),
+          expiresAt = _parse_instant(session.expiresAt),
+          refreshSessionId = session.refreshSessionId,
           attributes = _session_attributes(session.clientId, session.deviceInfo, session.ipAddress, session.userAgent)
         )
       )
@@ -1674,7 +2071,7 @@ object ComponentFactory:
     }
 
   def create(componentCreate: ComponentCreate): Vector[Component] =
-    new ComponentFactory().create(componentCreate).map(_withArtifactMetadata)
+    Vector(_withArtifactMetadata(new ComponentFactory().createPrimary(componentCreate)))
 
   def createStandalone(): Component =
     _withArtifactMetadata(UserAccountComponent())

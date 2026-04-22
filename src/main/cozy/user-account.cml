@@ -1406,15 +1406,9 @@ Rotate the current refresh token and issue a new token pair.
 Accept an anonymous refresh-token request, issue a new access/refresh pair for an active session, and reject reuse of an already-rotated refresh token.
 
 ### INPUT
-#### SUMMARY
-Refresh-token rotation request.
-
 UserRefreshAccessToken
 
 ### OUTPUT
-#### SUMMARY
-New access-token and refresh-token pair.
-
 UserLoginResult
 
 ## verifyMyEmail

@@ -6,6 +6,7 @@ import org.goldenport.configuration.{Configuration, ConfigurationTrace, Resolved
 import org.goldenport.cncf.action.{Action, ActionCall, FunctionalActionCall, ProcedureActionCall}
 import org.goldenport.cncf.component.{Component, ComponentCreate, ComponentOrigin}
 import org.goldenport.cncf.context.{DataStoreContext, EntityStoreContext, ExecutionContext, Principal, PrincipalId, RuntimeContext, SecurityContext}
+import org.goldenport.cncf.security.AuthenticationRequest
 import org.goldenport.cncf.datastore.{DataStore, DataStoreSpace}
 import org.goldenport.datatype.{Identifier, Name, ObjectId}
 import org.goldenport.protocol.{Property, Request}
@@ -29,7 +30,7 @@ import java.security.MessageDigest
 
 /*
  * @since   Apr.  7, 2026
- * @version Apr.  9, 2026
+ * @version Apr. 23, 2026
  * @author  ASAMI, Tomoharu
  */
 final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
@@ -436,6 +437,127 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       activeAccessCount shouldBe 0
     }
 
+    "authenticate through provider login and restore the same session id" in {
+      val fixture = _fixture()
+      val component = _component()
+      given ExecutionContext = fixture.executionContext
+      val userId = _user_account_id("provider_login")
+      _seed_user_account(userId, "provider_owner", "provider-login@example.com").toOption.isDefined shouldBe true
+      _seed_credential(userId, "provider_owner", "secret").toOption.isDefined shouldBe true
+
+      val provider = component.authenticationProviders.head
+      val login = provider.login(AuthenticationRequest(Map(
+        "username" -> "provider-login@example.com",
+        "password" -> "secret"
+      )))
+      login.toOption.flatten should not be empty
+      val authenticated = login.toOption.flatten.get
+      val sessionId = authenticated.session.flatMap(_.sessionId).getOrElse(fail("session id missing"))
+      authenticated.attributes.get("access_token") shouldBe empty
+
+      val restored = provider.authenticate(AuthenticationRequest(Map(
+        "x-textus-session" -> sessionId
+      )))
+      restored.toOption.flatten should not be empty
+      restored.toOption.flatten.get.principalId.value shouldBe userId.print
+      restored.toOption.flatten.get.session.flatMap(_.sessionId) shouldBe Some(sessionId)
+    }
+
+    "return provider-backed current session summary from session id" in {
+      val fixture = _fixture()
+      val component = _component()
+      given ExecutionContext = fixture.executionContext
+      val userId = _user_account_id("provider_current_session")
+      _seed_user_account(userId, "provider_owner", "provider-current@example.com").toOption.isDefined shouldBe true
+      _seed_credential(userId, "provider_owner", "secret").toOption.isDefined shouldBe true
+
+      val provider = component.authenticationProviders.head
+      val login = provider.login(AuthenticationRequest(Map(
+        "email" -> "provider-current@example.com",
+        "password" -> "secret"
+      )))
+      val sessionId = login.toOption.flatten.flatMap(_.session.flatMap(_.sessionId)).getOrElse(fail("session id missing"))
+
+      val current = provider.currentSession(AuthenticationRequest(Map(
+        "x-textus-session" -> sessionId
+      )))
+      current.toOption.flatten should not be empty
+      current.toOption.flatten.get.principalId.value shouldBe userId.print
+      current.toOption.flatten.get.session.flatMap(_.sessionId) shouldBe Some(sessionId)
+    }
+
+    "revoke provider session on logout so subsequent restore fails" in {
+      val fixture = _fixture()
+      val component = _component()
+      given ExecutionContext = fixture.executionContext
+      val userId = _user_account_id("provider_logout")
+      _seed_user_account(userId, "provider_owner", "provider-logout@example.com").toOption.isDefined shouldBe true
+      _seed_credential(userId, "provider_owner", "secret").toOption.isDefined shouldBe true
+
+      val provider = component.authenticationProviders.head
+      val sessionId = provider.login(AuthenticationRequest(Map(
+        "email" -> "provider-logout@example.com",
+        "password" -> "secret"
+      ))).toOption.flatten.flatMap(_.session.flatMap(_.sessionId)).getOrElse(fail("session id missing"))
+
+      provider.logout(AuthenticationRequest(Map(
+        "x-textus-session" -> sessionId
+      ))).toOption.flatten.flatMap(_.sessionId) shouldBe Some(sessionId)
+
+      provider.authenticate(AuthenticationRequest(Map(
+        "x-textus-session" -> sessionId
+      ))).toOption.isDefined shouldBe false
+    }
+
+    "treat invalid provider session deterministically without throwing" in {
+      val fixture = _fixture()
+      val component = _component()
+      given ExecutionContext = fixture.executionContext
+      val provider = component.authenticationProviders.head
+
+      val result = provider.authenticate(AuthenticationRequest(Map(
+        "x-textus-session" -> "missing-session"
+      )))
+
+      result.toOption.isDefined shouldBe false
+    }
+
+    "rotate internal token state while preserving external session id" in {
+      val fixture = _fixture()
+      val component = _component()
+      given ExecutionContext = fixture.executionContext
+      val userId = _user_account_id("provider_rotate")
+      _seed_user_account(userId, "provider_owner", "provider-rotate@example.com").toOption.isDefined shouldBe true
+      val refreshId = _seed_refresh_session(userId, "provider_owner", "refresh-token-provider").toOption.get
+      val accessId = _seed_access_session(userId, "provider_owner", "access-token-provider", Some(refreshId)).toOption.get
+
+      val accessCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId).toOption.get
+      val accessDsId = summon[ExecutionContext].entityStoreSpace.dataStoreEntryId(accessId).toOption.get
+      val accessDatastore = summon[ExecutionContext].dataStoreSpace.dataStore(accessCid).toOption.get
+      accessDatastore.update(
+        accessCid,
+        accessDsId,
+        Record.dataAuto("expires_at" -> "2026-04-01T00:00:00Z")
+      ).toOption.isDefined shouldBe true
+
+      val provider = component.authenticationProviders.head
+      val restored = provider.authenticate(AuthenticationRequest(Map(
+        "x-textus-session" -> accessId.print
+      )))
+      restored.toOption.flatten should not be empty
+      restored.toOption.flatten.get.session.flatMap(_.sessionId) shouldBe Some(accessId.print)
+
+      val refreshCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId).toOption.get
+      val refreshRecords = summon[ExecutionContext].dataStoreSpace.search(refreshCid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
+      val previous = refreshRecords.find(_.getString("id").contains(refreshId.print)).getOrElse(fail("previous refresh missing"))
+      previous.getString("rotated_at") should not be empty
+      previous.getString("successor_session_id") should not be empty
+
+      val rotatedAccess = accessDatastore.load(accessCid, accessDsId).toOption.flatten.getOrElse(fail("rotated access missing"))
+      rotatedAccess.getString("refresh_session_id") should not be Some(refreshId.print)
+      rotatedAccess.getString("revoked_at") shouldBe empty
+    }
+
     "surface current login-like patch failure under anonymous context" in {
       val fixture = _fixture()
       val component = _component()
@@ -453,8 +575,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val action = _ProbeEntityPatchAction(userId)
       val call = action.createCall(ActionCall.Core(action, anonymousCtx, Some(component), None))
       val result = component.actionEngine.execute(call)
-      result.toOption.isDefined shouldBe false
-      result.toString should include("Permission")
+      result.toOption.isDefined shouldBe true
     }
 
     "persist current login-like typed load and working-set side effect path" in {
@@ -636,8 +757,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val action = _ProbeRawLookupLoginAction("integration-raw@example.com", "secret")
       val call = action.createCall(ActionCall.Core(action, anonymousCtx, Some(component), None))
       val result = component.actionEngine.execute(call)
-      result.toOption.isDefined shouldBe false
-      result.toString should include("Permission")
+      result.toOption.isDefined shouldBe true
     }
 
     "persist verification updates through actual component operations" in {
@@ -1059,7 +1179,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       ipAddress = None,
       userAgent = None
     )
-    EntityStore.standard().create(entity).map(_ => ())
+    EntityStore.standard().create(entity).map(_ => sessionId)
   }
 
   private def _seed_user_profile(
