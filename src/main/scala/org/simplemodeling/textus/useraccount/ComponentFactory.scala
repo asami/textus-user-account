@@ -5,6 +5,7 @@ import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
 import scala.collection.concurrent.TrieMap
+import scala.util.Random
 
 import cats.syntax.all.*
 import org.goldenport.Consequence
@@ -23,6 +24,7 @@ import org.goldenport.cncf.directive.Query
 import org.goldenport.cncf.entity.EntityStore
 import org.goldenport.cncf.entity.runtime.{EntityMemoryPolicy, EntityRuntimePlan, PartitionStrategy, WorkingSetDefinition}
 import org.goldenport.cncf.operation.CmlOperationAccess
+import org.goldenport.cncf.messagedelivery.{DeliveryChannel, UnifiedMessage, MessageDeliveryProviderRuntime}
 import org.goldenport.cncf.security.{AuthenticationProvider, AuthenticationRequest, AuthenticationResult, OperationAccessPolicy}
 import org.goldenport.cncf.unitofwork.{ExecUowM, UnitOfWorkAuthorization}
 import org.simplemodeling.model.directive.{Condition, Update}
@@ -196,6 +198,30 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     ): UserService.VerifyMyPhoneActionCall =
       VerifyMyPhoneActionCallImpl(core, action)
 
+    override def createRequestPasswordResetActionCall(
+      core: ActionCall.Core,
+      action: UserService.RequestPasswordResetCommand
+    ): UserService.RequestPasswordResetActionCall =
+      RequestPasswordResetActionCallImpl(core, action)
+
+    override def createConfirmPasswordResetActionCall(
+      core: ActionCall.Core,
+      action: UserService.ConfirmPasswordResetCommand
+    ): UserService.ConfirmPasswordResetActionCall =
+      ConfirmPasswordResetActionCallImpl(core, action)
+
+    override def createEnrollTwoFactorActionCall(
+      core: ActionCall.Core,
+      action: UserService.EnrollTwoFactorCommand
+    ): UserService.EnrollTwoFactorActionCall =
+      EnrollTwoFactorActionCallImpl(core, action)
+
+    override def createVerifyTwoFactorLoginActionCall(
+      core: ActionCall.Core,
+      action: UserService.VerifyTwoFactorLoginCommand
+    ): UserService.VerifyTwoFactorLoginActionCall =
+      VerifyTwoFactorLoginActionCallImpl(core, action)
+
     override def createGetMyAccountActionCall(
       core: ActionCall.Core,
       action: UserService.GetMyAccountQuery
@@ -322,42 +348,41 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
     protected final def login(record: Record): ExecUowM[OperationResponse] =
       for
-        email <- exec_from(requiredString(record, List("email")))
+        identifier <- exec_from(requiredString(record, List("identifier", "username", "email", "loginName", "login_name", "handle")))
         password <- exec_from(requiredString(record, List("password")))
-        user <- userByEmail(email)
+        user <- userByLoginIdentifier(identifier)
         _ <- exec_from(ComponentFactory.requireAuthenticatable(user.status))
         credential <- credentialByUserAndPassword(user.id, password)
-        refreshIssued <- issueRefreshSession(
-          user.id,
-          refreshTokenFromSecurityContext(),
-          clientIdFromSecurityContext(),
-          deviceInfoFromSecurityContext(),
-          ipAddressFromSecurityContext(),
-          userAgentFromSecurityContext()
-        )
-        issued <- issueAccessSession(
-          user.id,
-          accessTokenFromSecurityContext(),
-          Some(refreshIssued.sessionId),
-          clientIdFromSecurityContext(),
-          deviceInfoFromSecurityContext(),
-          ipAddressFromSecurityContext(),
-          userAgentFromSecurityContext()
-        )
-        _ <- updateLastLoginAt(user.id)
-        _ <- exec_from(addLoggedInUser(user))
+        response <-
+          if ComponentFactory.isTwoFactorEnrolled(user.id) then
+            for
+              challenge <- exec_from(ComponentFactory.issueTwoFactorLoginChallenge(user.id, user.email, user.loginName.getOrElse(user.email)))
+              _ <- exec_from(sendEmailNotification(
+                recipient = user.email,
+                subject = "Your Textus verification code",
+                body = s"Use verification code ${challenge.code}. Challenge ID: ${challenge.challengeId}.",
+                templateId = Some("two-factor-login"),
+                attributes = Map(
+                  "challenge_id" -> challenge.challengeId,
+                  "code" -> challenge.code,
+                  "handle" -> user.loginName.getOrElse(user.email)
+                )
+              ))
+            yield
+              OperationResponse(
+                Record.data(
+                  "userAccountId" -> user.id.print,
+                  "credentialId" -> credential.id.print,
+                  "twoFactorRequired" -> true,
+                  "challengeId" -> challenge.challengeId,
+                  "channel" -> "email",
+                  "authenticated" -> false
+                )
+              )
+          else
+            _issue_login_response(user, credential.id)
       yield
-        OperationResponse(
-          Record.data(
-            "userAccountId" -> user.id.print,
-            "credentialId" -> credential.id.print,
-            "accessSessionId" -> issued.sessionId.print,
-            "accessToken" -> issued.rawToken,
-            "refreshSessionId" -> refreshIssued.sessionId.print,
-            "refreshToken" -> refreshIssued.rawToken,
-            "authenticated" -> true
-          )
-        )
+        response
 
     protected final def logout(record: Record): ExecUowM[OperationResponse] =
       for
@@ -434,7 +459,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         userId <- exec_from(currentUserId(record))
         user <- entity_load[UserAccountEntity](userId)
       yield
-        OperationResponse(user.toRecord())
+        OperationResponse(_public_user_record(user))
 
     protected final def verifyMyEmail(record: Record): ExecUowM[OperationResponse] =
       for
@@ -459,6 +484,73 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       yield
         OperationResponse.void
 
+    protected final def requestPasswordReset(record: Record): ExecUowM[OperationResponse] =
+      for
+        email <- exec_from(requiredString(record, List("email")))
+        users <- rawUserAccountsByEmail(email)
+        _ <- users.headOption match
+          case Some(user) =>
+            for
+              _ <- exec_from(ComponentFactory.requireAuthenticatable(user.status))
+              token <- exec_from(ComponentFactory.issuePasswordResetToken(user.id, user.email, user.loginName.getOrElse(user.email)))
+              _ <- exec_from(sendEmailNotification(
+                recipient = user.email,
+                subject = "Reset your Textus password",
+                body = s"Open /web/textus-user-account/password-reset/confirm?token=${token.token} to continue.",
+                templateId = Some("password-reset"),
+                attributes = Map(
+                  "reset_token" -> token.token,
+                  "handle" -> user.loginName.getOrElse(user.email)
+                )
+              ))
+            yield
+              ()
+          case None => exec_from(Consequence.unit)
+      yield
+        OperationResponse(Record.data("accepted" -> true))
+
+    protected final def confirmPasswordReset(record: Record): ExecUowM[OperationResponse] =
+      for
+        token <- exec_from(requiredString(record, List("token", "resetToken", "reset_token")))
+        next <- exec_from(requiredString(record, List("newPassword", "new_password", "password")))
+        reset <- exec_from(ComponentFactory.consumePasswordResetToken(token))
+        credentials <- rawCredentialsByUser(reset.userId)
+        credential <- exec_from(firstOrFailure(credentials, s"credential not found for user: ${reset.userId.print}"))
+        patch <- exec_from(CredentialUpdate.createC(Record.dataAuto("passwordHash" -> passwordHash(next))))
+        _ <- entity_update(credential.id, patch)
+        _ <- updatePasswordChangedAt(reset.userId)
+        _ <- revokeAllAccessSessions(reset.userId)
+        _ <- revokeAllRefreshSessions(reset.userId)
+      yield
+        OperationResponse(Record.data("reset" -> true))
+
+    protected final def enrollTwoFactor(record: Record): ExecUowM[OperationResponse] =
+      for
+        userId <- exec_from(currentUserId(record))
+        user <- entity_load[UserAccountEntity](userId)
+        _ <- exec_from(ComponentFactory.enrollTwoFactor(user.id, user.email, user.loginName.getOrElse(user.email)))
+        _ <- exec_from(sendEmailNotification(
+          recipient = user.email,
+          subject = "Two-factor authentication enabled",
+          body = s"Email verification codes are now required for ${user.loginName.getOrElse(user.email)}.",
+          templateId = Some("two-factor-enrolled"),
+          attributes = Map("handle" -> user.loginName.getOrElse(user.email))
+        ))
+      yield
+        OperationResponse(Record.data("enrolled" -> true, "channel" -> "email"))
+
+    protected final def verifyTwoFactorLogin(record: Record): ExecUowM[OperationResponse] =
+      for
+        challengeId <- exec_from(requiredString(record, List("challengeId", "challenge_id")))
+        code <- exec_from(requiredString(record, List("code", "verificationCode", "verification_code")))
+        challenge <- exec_from(ComponentFactory.verifyTwoFactorLoginChallenge(challengeId, code))
+        user <- entity_load[UserAccountEntity](challenge.userId)
+        credentials <- rawCredentialsByUser(user.id)
+        credential <- exec_from(firstOrFailure(credentials, s"credential not found for user: ${user.id.print}"))
+        response <- _issue_login_response(user, credential.id)
+      yield
+        response
+
     protected final def requireManagementPrivilege(): Consequence[Unit] =
       ComponentFactory.requireManagementPrivilege(using executionContext)
 
@@ -475,6 +567,9 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         user <- exec_from(firstOrFailure(users, s"user account not found by email: $email"))
       yield
         user
+
+    private def userByLoginIdentifier(identifier: String): ExecUowM[UserAccountEntity] =
+      if identifier.contains("@") then userByEmail(identifier) else userByLoginName(identifier)
 
     private def requireEmailAvailable(email: String): ExecUowM[Unit] =
       for
@@ -517,13 +612,73 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       yield
         ()
 
+    private def sendEmailNotification(
+      recipient: String,
+      subject: String,
+      body: String,
+      templateId: Option[String] = None,
+      attributes: Map[String, String] = Map.empty
+    ): Consequence[Unit] =
+      val base = component.map(_.logic.executionContext()).getOrElse(executionContext)
+      MessageDeliveryProviderRuntime.send(
+        base,
+        UnifiedMessage(
+          channel = DeliveryChannel.Email,
+          recipient = recipient,
+          subject = Some(subject),
+          body = body,
+          templateId = templateId,
+          attributes = attributes
+        )
+      ).map(_ => ())
+
+    private def _issue_login_response(
+      user: UserAccountEntity,
+      credentialId: EntityId
+    ): ExecUowM[OperationResponse] =
+      for
+        refreshIssued <- issueRefreshSession(
+          user.id,
+          refreshTokenFromSecurityContext(),
+          clientIdFromSecurityContext(),
+          deviceInfoFromSecurityContext(),
+          ipAddressFromSecurityContext(),
+          userAgentFromSecurityContext()
+        )
+        issued <- issueAccessSession(
+          user.id,
+          accessTokenFromSecurityContext(),
+          Some(refreshIssued.sessionId),
+          clientIdFromSecurityContext(),
+          deviceInfoFromSecurityContext(),
+          ipAddressFromSecurityContext(),
+          userAgentFromSecurityContext()
+        )
+        _ <- updateLastLoginAt(user.id)
+        _ <- exec_from(addLoggedInUser(user))
+      yield
+        OperationResponse(
+          Record.data(
+            "userAccountId" -> user.id.print,
+            "credentialId" -> credentialId.print,
+            "accessSessionId" -> issued.sessionId.print,
+            "accessToken" -> issued.rawToken,
+            "refreshSessionId" -> refreshIssued.sessionId.print,
+            "refreshToken" -> refreshIssued.rawToken,
+            "authenticated" -> true
+          )
+        )
+
+    private def _public_user_record(user: UserAccountEntity): Record =
+      user.toRecord() ++ Record.data("handle" -> user.loginName.orNull)
+
     protected final def lookupUserByLoginName(record: Record): ExecUowM[OperationResponse] =
       for
         loginName <- exec_from(requiredString(record, List("loginName", "login_name")))
         user <- userByLoginName(loginName)
         _ <- exec_from(ComponentFactory.requireAuthenticatable(user.status))
       yield
-        OperationResponse(user.toRecord())
+        OperationResponse(_public_user_record(user))
 
     private def credentialsForUser(userId: EntityId): ExecUowM[Vector[CredentialEntity]] =
       val query = CredentialQuery(
@@ -601,6 +756,27 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         )
       yield
         users
+
+    private def rawCredentialsByUser(
+      userId: EntityId
+    ): ExecUowM[Vector[CredentialEntity]] =
+      for
+        records <- rawRecords(CredentialQuery.collectionId)
+        ids <- exec_from(
+          records
+            .filter(_.getString("user_account_id").contains(userId.print))
+            .traverse(_entity_id_of)
+        )
+        credentials <- exec_from(
+          ids.traverse(id =>
+            EntityStore
+              .standard()
+              .load[CredentialEntity](id)(using summon, executionContext)
+              .flatMap(x => Consequence.successOrEntityNotFound(x)(id))
+          )
+        )
+      yield
+        credentials
 
     private def rawCredentialsByUserAndPassword(
       userId: EntityId,
@@ -1241,6 +1417,34 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     protected def build_Program: ExecUowM[OperationResponse] =
       verifyMyPhone(action.record)
 
+  private final case class RequestPasswordResetActionCallImpl(
+    core: ActionCall.Core,
+    override val action: UserService.RequestPasswordResetCommand
+  ) extends UserService.RequestPasswordResetActionCall, UserAccountActionSupport:
+    protected def build_Program: ExecUowM[OperationResponse] =
+      requestPasswordReset(action.record)
+
+  private final case class ConfirmPasswordResetActionCallImpl(
+    core: ActionCall.Core,
+    override val action: UserService.ConfirmPasswordResetCommand
+  ) extends UserService.ConfirmPasswordResetActionCall, UserAccountActionSupport:
+    protected def build_Program: ExecUowM[OperationResponse] =
+      confirmPasswordReset(action.record)
+
+  private final case class EnrollTwoFactorActionCallImpl(
+    core: ActionCall.Core,
+    override val action: UserService.EnrollTwoFactorCommand
+  ) extends UserService.EnrollTwoFactorActionCall, UserAccountActionSupport:
+    protected def build_Program: ExecUowM[OperationResponse] =
+      enrollTwoFactor(action.record)
+
+  private final case class VerifyTwoFactorLoginActionCallImpl(
+    core: ActionCall.Core,
+    override val action: UserService.VerifyTwoFactorLoginCommand
+  ) extends UserService.VerifyTwoFactorLoginActionCall, UserAccountActionSupport:
+    protected def build_Program: ExecUowM[OperationResponse] =
+      verifyTwoFactorLogin(action.record)
+
   private final case class ManagementCreateUserAccountActionCallImpl(
     core: ActionCall.Core,
     override val action: ManagementService.CreateUserAccountCommand
@@ -1295,6 +1499,31 @@ object ComponentFactory:
     sessionId: EntityId,
     rawToken: String
   )
+
+  private final case class PasswordResetToken(
+    token: String,
+    userId: EntityId,
+    email: String,
+    handle: String,
+    expiresAt: Instant,
+    usedAt: Option[Instant] = None
+  )
+
+  private final case class TwoFactorChallenge(
+    challengeId: String,
+    userId: EntityId,
+    email: String,
+    handle: String,
+    code: String,
+    expiresAt: Instant,
+    consumedAt: Option[Instant] = None
+  )
+
+  private val PasswordResetTtlSeconds: Int = 60 * 30
+  private val TwoFactorChallengeTtlSeconds: Int = 60 * 10
+  private val _password_reset_tokens = TrieMap.empty[String, PasswordResetToken]
+  private val _two_factor_enrollments = TrieMap.empty[String, String]
+  private val _two_factor_login_challenges = TrieMap.empty[String, TwoFactorChallenge]
 
   val AccessSessionTtlSeconds: Int = 60 * 60 * 8
   val RefreshSessionTtlSeconds: Int = 60 * 60 * 24 * 14
@@ -1577,6 +1806,79 @@ object ComponentFactory:
   def userAccountAuthenticationProvider(component: Component): AuthenticationProvider =
     new UserAccountAuthenticationProvider(component)
 
+  private def issuePasswordResetToken(
+    userId: EntityId,
+    email: String,
+    handle: String
+  ): Consequence[PasswordResetToken] =
+    val token = generateToken()
+    val issued = PasswordResetToken(
+      token = token,
+      userId = userId,
+      email = email,
+      handle = handle,
+      expiresAt = Instant.now.plusSeconds(PasswordResetTtlSeconds.toLong)
+    )
+    _password_reset_tokens.update(token, issued)
+    Consequence.success(issued)
+
+  private def consumePasswordResetToken(token: String): Consequence[PasswordResetToken] =
+    _password_reset_tokens.get(token) match
+      case Some(current) if current.usedAt.isEmpty && current.expiresAt.isAfter(Instant.now) =>
+        val consumed = current.copy(usedAt = Some(Instant.now))
+        _password_reset_tokens.update(token, consumed)
+        Consequence.success(consumed)
+      case Some(_) =>
+        Consequence.failure("invalid password reset token")
+      case None =>
+        Consequence.failure("invalid password reset token")
+
+  private def enrollTwoFactor(
+    userId: EntityId,
+    email: String,
+    handle: String
+  ): Consequence[Unit] =
+    _two_factor_enrollments.update(userId.print, s"$email::$handle")
+    Consequence.unit
+
+  def isTwoFactorEnrolled(userId: EntityId): Boolean =
+    _two_factor_enrollments.contains(userId.print)
+
+  private def issueTwoFactorLoginChallenge(
+    userId: EntityId,
+    email: String,
+    handle: String
+  ): Consequence[TwoFactorChallenge] =
+    val challenge = TwoFactorChallenge(
+      challengeId = UUID.randomUUID.toString,
+      userId = userId,
+      email = email,
+      handle = handle,
+      code = _verification_code(),
+      expiresAt = Instant.now.plusSeconds(TwoFactorChallengeTtlSeconds.toLong)
+    )
+    _two_factor_login_challenges.update(challenge.challengeId, challenge)
+    Consequence.success(challenge)
+
+  private def verifyTwoFactorLoginChallenge(
+    challengeId: String,
+    code: String
+  ): Consequence[TwoFactorChallenge] =
+    _two_factor_login_challenges.get(challengeId) match
+      case Some(challenge) if challenge.consumedAt.isEmpty && challenge.expiresAt.isAfter(Instant.now) && challenge.code == code =>
+        val consumed = challenge.copy(consumedAt = Some(Instant.now))
+        _two_factor_login_challenges.update(challengeId, consumed)
+        Consequence.success(consumed)
+      case Some(_) =>
+        Consequence.failure("invalid two-factor challenge")
+      case None =>
+        Consequence.failure("invalid two-factor challenge")
+
+  def resetEphemeralSecurityStateForTest(): Unit =
+    _password_reset_tokens.clear()
+    _two_factor_enrollments.clear()
+    _two_factor_login_challenges.clear()
+
   private final class UserAccountAuthenticationProvider(component: Component) extends AuthenticationProvider {
     val name: String = "textus-user-account"
 
@@ -1687,6 +1989,8 @@ object ComponentFactory:
           .orElse(record.getString("access_session_id")) match
           case Some(sessionId) if sessionId.trim.nonEmpty =>
             authenticateSessionId(sessionId.trim)
+          case _ if record.getString("challengeId").nonEmpty =>
+            Consequence.failure("two-factor challenge required")
           case _ =>
             Consequence.failure("textus-user-account login did not return accessSessionId")
       case other =>
@@ -2006,6 +2310,7 @@ object ComponentFactory:
         "privilege" -> "user",
         "email" -> user.email,
         "login_name" -> user.loginName.orNull,
+        "handle" -> user.loginName.orNull,
         "access_token" -> accessToken
       ).collect { case (k, v) if v != null && v.nonEmpty => k -> v },
       capabilities = Set(Capability("user")),
@@ -2037,6 +2342,7 @@ object ComponentFactory:
         "privilege" -> "user",
         "email" -> user.email,
         "login_name" -> user.loginName.orNull,
+        "handle" -> user.loginName.orNull,
         "refresh_token" -> refreshToken
       ).collect { case (k, v) if v != null && v.nonEmpty => k -> v },
       capabilities = Set(Capability("user")),
@@ -2067,7 +2373,8 @@ object ComponentFactory:
         "role" -> "user",
         "privilege" -> "user",
         "email" -> user.email,
-        "login_name" -> user.loginName.orNull
+        "login_name" -> user.loginName.orNull,
+        "handle" -> user.loginName.orNull
       ).collect { case (k, v) if v != null && v.nonEmpty => k -> v },
       capabilities = Set(Capability("user")),
       level = SecurityLevel("user"),
@@ -2100,6 +2407,9 @@ object ComponentFactory:
 
   private def _parse_instant(p: String): Option[Instant] =
     scala.util.Try(Instant.parse(p)).toOption
+
+  private def _verification_code(): String =
+    f"${Random.nextInt(1000000)}%06d"
 
   private object LoginWorkingSet:
     private val users = TrieMap.empty[EntityId, UserAccountEntity]

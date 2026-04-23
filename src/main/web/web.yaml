@@ -10,3 +10,33 @@ apps:
     path: /web/textus-user-account/signup
     root: /web/signup
     route: /web/textus-user-account/signup
+  - name: password-reset
+    kind: static-form
+    path: /web/textus-user-account/password-reset
+    root: /web/password-reset
+    route: /web/textus-user-account/password-reset
+  - name: password-reset-sent
+    kind: static-form
+    path: /web/textus-user-account/password-reset/sent
+    root: /web/password-reset-sent
+    route: /web/textus-user-account/password-reset/sent
+  - name: password-reset-confirm
+    kind: static-form
+    path: /web/textus-user-account/password-reset/confirm
+    root: /web/password-reset-confirm
+    route: /web/textus-user-account/password-reset/confirm
+  - name: password-reset-success
+    kind: static-form
+    path: /web/textus-user-account/password-reset/success
+    root: /web/password-reset-success
+    route: /web/textus-user-account/password-reset/success
+  - name: two-factor
+    kind: static-form
+    path: /web/textus-user-account/two-factor
+    root: /web/two-factor
+    route: /web/textus-user-account/two-factor
+  - name: two-factor-challenge
+    kind: static-form
+    path: /web/textus-user-account/two-factor/challenge
+    root: /web/two-factor-challenge
+    route: /web/textus-user-account/two-factor/challenge

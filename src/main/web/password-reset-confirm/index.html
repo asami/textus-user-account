@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Choose a New Password</title>
+  <link href="/web/assets/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+  <main class="container py-5"><div class="row justify-content-center"><div class="col-12 col-md-7 col-lg-5"><div class="card shadow-sm"><div class="card-body p-4">
+    <p class="text-uppercase text-muted small mb-2">Textus User Account</p>
+    <h1 class="h3 mb-3">Choose a new password</h1>
+    <div id="confirm-error" class="alert alert-danger d-none" role="alert"></div>
+    <form id="confirm-form">
+      <div class="mb-3">
+        <label class="form-label" for="token">Reset token</label>
+        <input class="form-control" id="token" name="token" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="newPassword">New password</label>
+        <input class="form-control" id="newPassword" name="newPassword" type="password" autocomplete="new-password" required>
+      </div>
+      <div class="d-grid gap-2">
+        <button class="btn btn-primary" type="submit">Update password</button>
+      </div>
+    </form>
+  </div></div></div></div></main>
+  <script>
+    (function() {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('token');
+      const returnTo = params.get('returnTo') || '/web/cwitter';
+      if (token) document.getElementById('token').value = token;
+      const form = document.getElementById('confirm-form');
+      const error = document.getElementById('confirm-error');
+      form.addEventListener('submit', async function(event) {
+        event.preventDefault();
+        error.classList.add('d-none');
+        const response = await fetch('/form-api/textus-user-account/user/confirm-password-reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams(new FormData(form)),
+          credentials: 'same-origin'
+        });
+        if (response.ok) {
+          window.location.href = '/web/textus-user-account/password-reset/success?returnTo=' + encodeURIComponent(returnTo);
+          return;
+        }
+        error.textContent = (await response.text()) || 'Unable to reset password.';
+        error.classList.remove('d-none');
+      });
+    })();
+  </script>
+</body>
+</html>

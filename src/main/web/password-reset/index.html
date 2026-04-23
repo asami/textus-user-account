@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reset Password</title>
+  <link href="/web/assets/bootstrap.min.css" rel="stylesheet">
+  <link href="/web/assets/textus-widgets.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+  <main class="container py-5">
+    <div class="row justify-content-center">
+      <div class="col-12 col-md-7 col-lg-5">
+        <div class="card shadow-sm"><div class="card-body p-4">
+          <p class="text-uppercase text-muted small mb-2">Textus User Account</p>
+          <h1 class="h3 mb-3">Reset password</h1>
+          <p class="text-secondary">Enter your email address. The same confirmation page is shown whether the account exists or not.</p>
+          <div id="reset-error" class="alert alert-danger d-none" role="alert"></div>
+          <form id="reset-form">
+            <div class="mb-3">
+              <label class="form-label" for="email">Email</label>
+              <input class="form-control" id="email" name="email" type="email" autocomplete="email" required>
+              <div class="form-text">Used for sign-in and account recovery notifications.</div>
+            </div>
+            <div class="d-grid gap-2">
+              <button class="btn btn-primary" type="submit">Send reset instructions</button>
+              <a id="signin-link" class="btn btn-outline-secondary" href="#">Back to sign in</a>
+            </div>
+          </form>
+        </div></div>
+      </div>
+    </div>
+  </main>
+  <script>
+    (function() {
+      const form = document.getElementById('reset-form');
+      const error = document.getElementById('reset-error');
+      const params = new URLSearchParams(window.location.search);
+      const returnTo = params.get('returnTo') || '/web/cwitter';
+      document.getElementById('signin-link').href = '/web/textus-user-account/signin?returnTo=' + encodeURIComponent(returnTo);
+      form.addEventListener('submit', async function(event) {
+        event.preventDefault();
+        error.classList.add('d-none');
+        const response = await fetch('/form-api/textus-user-account/user/request-password-reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams(new FormData(form)),
+          credentials: 'same-origin'
+        });
+        if (response.ok) {
+          window.location.href = '/web/textus-user-account/password-reset/sent?returnTo=' + encodeURIComponent(returnTo);
+          return;
+        }
+        error.textContent = (await response.text()) || 'Unable to request password reset.';
+        error.classList.remove('d-none');
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -15,21 +15,24 @@
           <div class="card-body p-4">
             <p class="text-uppercase text-muted small mb-2">Textus User Account</p>
             <h1 class="h3 mb-3">Sign in</h1>
-            <p class="text-secondary">Use your account to continue to the application.</p>
+            <p class="text-secondary">Use your handle or email to continue to the application.</p>
             <div id="login-error" class="alert alert-danger d-none" role="alert"></div>
             <form id="login-form" method="post">
               <div class="mb-3">
-                <label class="form-label" for="username">Email or login name</label>
+                <label class="form-label" for="username">Handle or Email</label>
                 <input class="form-control" id="username" name="username" autocomplete="username" required>
+                <div class="form-text">Handle is your public name for @mentions and direct messages. Email also works for sign-in.</div>
               </div>
               <div class="mb-3">
                 <label class="form-label" for="password">Password</label>
                 <input class="form-control" id="password" name="password" type="password" autocomplete="current-password" required>
+                <div class="form-text">Use the password registered for your Textus account.</div>
               </div>
               <input id="return-to" type="hidden" name="returnTo">
               <div class="d-grid gap-2">
                 <button class="btn btn-primary" type="submit">Sign in</button>
                 <a id="signup-link" class="btn btn-outline-secondary" href="#">Create account</a>
+                <a id="reset-link" class="btn btn-link" href="#">Forgot password?</a>
               </div>
             </form>
           </div>
@@ -42,17 +45,77 @@
       const params = new URLSearchParams(window.location.search);
       const returnTo = params.get("returnTo") || "/web/cwitter";
       const pathname = window.location.pathname;
-      const loginAction = pathname.endsWith("/signin") ? pathname.replace(/\/signin$/, "/login") : pathname;
       const signupPath = pathname.endsWith("/signin") ? pathname.replace(/\/signin$/, "/signup") : pathname.replace(/\/login$/, "/signup");
+      const resetPath = pathname.endsWith("/signin") ? pathname.replace(/\/signin$/, "/password-reset") : "/web/textus-user-account/password-reset";
+      const challengePath = pathname.endsWith("/signin") ? pathname.replace(/\/signin$/, "/two-factor/challenge") : "/web/textus-user-account/two-factor/challenge";
       const error = params.get("error");
-      document.getElementById("login-form").setAttribute("action", loginAction + "?returnTo=" + encodeURIComponent(returnTo));
+      const form = document.getElementById("login-form");
+      const box = document.getElementById("login-error");
       document.getElementById("return-to").value = returnTo;
       document.getElementById("signup-link").setAttribute("href", signupPath + "?returnTo=" + encodeURIComponent(returnTo));
+      document.getElementById("reset-link").setAttribute("href", resetPath + "?returnTo=" + encodeURIComponent(returnTo));
+
+      function normalizedSegment(value) {
+        return (value || "textus-user-account")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "") || "textus-user-account";
+      }
+
+      function sessionCookieName(targetPath) {
+        const match = (targetPath || "").match(/^\/web\/([^/?#]+)/);
+        return "textus-session-" + normalizedSegment(match ? match[1] : "textus-user-account");
+      }
+
+      function setSessionCookie(sessionId, targetPath) {
+        document.cookie = sessionCookieName(targetPath) + "=" + encodeURIComponent(sessionId) + "; Path=/; SameSite=Lax";
+      }
+
       if (error) {
-        const box = document.getElementById("login-error");
         box.textContent = error;
         box.classList.remove("d-none");
       }
+
+      form.addEventListener("submit", async function(event) {
+        event.preventDefault();
+        box.classList.add("d-none");
+        box.textContent = "";
+        const body = new URLSearchParams();
+        body.set("username", document.getElementById("username").value);
+        body.set("password", document.getElementById("password").value);
+        const response = await fetch("/form-api/textus-user-account/user/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          credentials: "same-origin",
+          body
+        });
+        const text = await response.text();
+        let payload = {};
+        try {
+          payload = text ? JSON.parse(text) : {};
+        } catch (_) {
+          payload = {};
+        }
+        if (!response.ok) {
+          box.textContent = text || ("Sign-in failed (" + response.status + ").");
+          box.classList.remove("d-none");
+          return;
+        }
+        if (payload.twoFactorRequired && payload.challengeId) {
+          const url = new URL(challengePath, window.location.origin);
+          url.searchParams.set("challengeId", payload.challengeId);
+          url.searchParams.set("returnTo", returnTo);
+          window.location.href = url.pathname + url.search;
+          return;
+        }
+        if (payload.accessSessionId) {
+          setSessionCookie(payload.accessSessionId, returnTo);
+          window.location.href = returnTo;
+          return;
+        }
+        box.textContent = "Sign-in did not return a session.";
+        box.classList.remove("d-none");
+      });
     })();
   </script>
 </body>

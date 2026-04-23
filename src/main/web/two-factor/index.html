@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Enable Two-Factor Authentication</title>
+  <link href="/web/assets/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+  <main class="container py-5"><div class="row justify-content-center"><div class="col-12 col-md-7 col-lg-5"><div class="card shadow-sm"><div class="card-body p-4">
+    <p class="text-uppercase text-muted small mb-2">Textus User Account</p>
+    <h1 class="h3 mb-3">Enable two-factor authentication</h1>
+    <p class="text-secondary">Email verification codes are optional. When enabled, sign-in requires your password and a short code sent by notification.</p>
+    <div id="two-factor-error" class="alert alert-danger d-none" role="alert"></div>
+    <div id="two-factor-success" class="alert alert-success d-none" role="alert">Two-factor authentication is enabled for this account.</div>
+    <form id="two-factor-form"><div class="d-grid gap-2"><button class="btn btn-primary" type="submit">Enable email two-factor</button></div></form>
+  </div></div></div></div></main>
+  <script>
+    (function() {
+      const form = document.getElementById('two-factor-form');
+      const error = document.getElementById('two-factor-error');
+      const success = document.getElementById('two-factor-success');
+      form.addEventListener('submit', async function(event) {
+        event.preventDefault();
+        error.classList.add('d-none');
+        success.classList.add('d-none');
+        const response = await fetch('/form-api/textus-user-account/user/enroll-two-factor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams(),
+          credentials: 'same-origin'
+        });
+        if (response.ok) {
+          success.classList.remove('d-none');
+          return;
+        }
+        error.textContent = (await response.text()) || 'Unable to enable two-factor authentication.';
+        error.classList.remove('d-none');
+      });
+    })();
+  </script>
+</body>
+</html>

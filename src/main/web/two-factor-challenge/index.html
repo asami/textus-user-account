@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Verification Code</title>
+  <link href="/web/assets/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+  <main class="container py-5"><div class="row justify-content-center"><div class="col-12 col-md-7 col-lg-5"><div class="card shadow-sm"><div class="card-body p-4">
+    <p class="text-uppercase text-muted small mb-2">Textus User Account</p>
+    <h1 class="h3 mb-3">Enter verification code</h1>
+    <p class="text-secondary">A verification code was issued for this sign-in attempt.</p>
+    <div id="challenge-error" class="alert alert-danger d-none" role="alert"></div>
+    <form id="challenge-form">
+      <div class="mb-3">
+        <label class="form-label" for="challengeId">Challenge ID</label>
+        <input class="form-control" id="challengeId" name="challengeId" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="code">Verification code</label>
+        <input class="form-control" id="code" name="code" inputmode="numeric" autocomplete="one-time-code" required>
+      </div>
+      <div class="d-grid gap-2"><button class="btn btn-primary" type="submit">Complete sign in</button></div>
+    </form>
+  </div></div></div></div></main>
+  <script>
+    (function() {
+      const params = new URLSearchParams(window.location.search);
+      const challengeId = params.get('challengeId') || '';
+      const returnTo = params.get('returnTo') || '/web/cwitter';
+      document.getElementById('challengeId').value = challengeId;
+      const form = document.getElementById('challenge-form');
+      const error = document.getElementById('challenge-error');
+      function normalizedSegment(value) {
+        return (value || 'textus-user-account').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'textus-user-account';
+      }
+      function sessionCookieName(targetPath) {
+        const match = (targetPath || '').match(/^\/web\/([^/?#]+)/);
+        return 'textus-session-' + normalizedSegment(match ? match[1] : 'textus-user-account');
+      }
+      form.addEventListener('submit', async function(event) {
+        event.preventDefault();
+        error.classList.add('d-none');
+        const response = await fetch('/form-api/textus-user-account/user/verify-two-factor-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams(new FormData(form)),
+          credentials: 'same-origin'
+        });
+        const text = await response.text();
+        let payload = {};
+        try { payload = text ? JSON.parse(text) : {}; } catch (_) { payload = {}; }
+        if (!response.ok) {
+          error.textContent = text || 'Unable to verify code.';
+          error.classList.remove('d-none');
+          return;
+        }
+        if (payload.accessSessionId) {
+          document.cookie = sessionCookieName(returnTo) + '=' + encodeURIComponent(payload.accessSessionId) + '; Path=/; SameSite=Lax';
+          window.location.href = returnTo;
+          return;
+        }
+        error.textContent = 'Verification did not return a session.';
+        error.classList.remove('d-none');
+      });
+    })();
+  </script>
+</body>
+</html>

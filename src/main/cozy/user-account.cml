@@ -725,6 +725,118 @@ Current account identity context, phone number, and phone verification proof.
 
 Phone verification result.
 
+#### requestPasswordReset
+
+##### DESCRIPTION
+Requests a password-reset notification for the supplied email address.
+
+##### ACCESS
+
+###### POLICY
+
+anonymous_only
+
+##### PRECONDITION
+
+The caller provides an email address.
+
+##### POSTCONDITION
+
+If a usable account exists, a reset token is issued and delivered through the message-delivery provider. Public response does not reveal account existence.
+
+##### IN
+
+Email address for account recovery.
+
+##### OUT
+
+Generic acceptance result.
+
+#### confirmPasswordReset
+
+##### DESCRIPTION
+Confirms a password reset using the issued reset token and a new password.
+
+##### ACCESS
+
+###### POLICY
+
+anonymous_only
+
+##### PRECONDITION
+
+The caller presents a valid, unexpired reset token.
+
+##### POSTCONDITION
+
+Credential secret material is replaced, prior sessions are revoked, and the token becomes single-use.
+
+##### IN
+
+Reset token and new password.
+
+##### OUT
+
+Password-reset completion result.
+
+#### enrollTwoFactor
+
+##### DESCRIPTION
+Enables optional email-based two-factor authentication for the current account.
+
+##### ACCESS
+
+###### POLICY
+
+owner_or_manager
+
+##### ENTITY
+
+UserAccount
+
+##### PRECONDITION
+
+The requester is associated with a resolvable current account context.
+
+##### POSTCONDITION
+
+The account is marked as two-factor enabled and an enrollment notification is emitted.
+
+##### IN
+
+Current account identity context.
+
+##### OUT
+
+Two-factor enrollment result.
+
+#### verifyTwoFactorLogin
+
+##### DESCRIPTION
+Completes a pending login challenge using the issued verification code.
+
+##### ACCESS
+
+###### POLICY
+
+anonymous_only
+
+##### PRECONDITION
+
+The caller presents a valid challenge id and matching unexpired verification code.
+
+##### POSTCONDITION
+
+An authenticated session is established for the challenged account.
+
+##### IN
+
+Challenge id and verification code.
+
+##### OUT
+
+Authenticated login result.
+
 #### getMyAccount
 
 ##### DESCRIPTION
@@ -1145,8 +1257,8 @@ Minimum command to open a provisional account.
 
 | name      | type   | multiplicity |
 |-----------+--------+--------------|
-| email     | string | 1            |
-| password  | string | 1            |
+| identifier | string | 1            |
+| password   | string | 1            |
 
 ## UserRegister
 
@@ -1161,8 +1273,8 @@ Command to create a regular account in the standard user registration flow.
 | name      | name   | 1            |
 | title     | string | 1            |
 | loginName | string | 1            |
-| email     | string | 1            |
-| password  | string | 1            |
+| identifier | string | 1            |
+| password   | string | 1            |
 
 ## UserPromoteToFormalRegistration
 
@@ -1187,8 +1299,8 @@ Authentication command for user sign-in.
 
 | name      | type   | multiplicity |
 |-----------+--------+--------------|
-| email     | string | 1            |
-| password  | string | 1            |
+| identifier | string | 1            |
+| password   | string | 1            |
 
 ## UserLogout
 
@@ -1493,6 +1605,50 @@ Phone verification completion result.
 
 #### TYPE
 UserVerifyMyPhoneResult
+
+## requestPasswordReset
+
+### TYPE
+COMMAND
+
+### INPUT
+UserRequestPasswordReset
+
+### OUTPUT
+UserChangePasswordResult
+
+## confirmPasswordReset
+
+### TYPE
+COMMAND
+
+### INPUT
+UserConfirmPasswordReset
+
+### OUTPUT
+UserChangePasswordResult
+
+## enrollTwoFactor
+
+### TYPE
+COMMAND
+
+### INPUT
+UserEnrollTwoFactor
+
+### OUTPUT
+UserVerifyMyEmailResult
+
+## verifyTwoFactorLogin
+
+### TYPE
+COMMAND
+
+### INPUT
+UserVerifyTwoFactorLogin
+
+### OUTPUT
+UserLoginResult
 
 ## getMyAccount
 

@@ -5,6 +5,7 @@ import cats.syntax.all.*
 import org.goldenport.configuration.{Configuration, ConfigurationTrace, ResolvedConfiguration}
 import org.goldenport.cncf.action.{Action, ActionCall, FunctionalActionCall, ProcedureActionCall}
 import org.goldenport.cncf.component.{Component, ComponentCreate, ComponentOrigin}
+import org.goldenport.cncf.component.builtin.messagedeliverystub.MessageDeliveryStubComponent
 import org.goldenport.cncf.context.{DataStoreContext, EntityStoreContext, ExecutionContext, Principal, PrincipalId, RuntimeContext, SecurityContext}
 import org.goldenport.cncf.security.AuthenticationRequest
 import org.goldenport.cncf.datastore.{DataStore, DataStoreSpace}
@@ -1039,8 +1040,209 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
     }
   }
 
+
+    "request password reset without leaking account existence and confirm it with the issued token" in {
+      val fixture = _fixture()
+      val component = _component()
+      val anonymousCtx = _with_security(
+        fixture,
+        "password_reset_owner",
+        withAccessToken = false,
+        extraAttributes = Map("anonymous" -> "true")
+      )
+
+      val registered = _execute_request(
+        component,
+        anonymousCtx,
+        Request.ofService(
+          "User",
+          "register",
+          properties = List(
+            Property("name", "Reset User", None),
+            Property("title", "member", None),
+            Property("loginName", "reset-user", None),
+            Property("email", "reset-user@example.com", None),
+            Property("password", "secret", None)
+          )
+        )
+      )
+      registered.toOption.isDefined shouldBe true
+
+      val acceptedKnown = _execute_request(
+        component,
+        anonymousCtx,
+        Request.ofService(
+          "User",
+          "requestPasswordReset",
+          properties = List(Property("email", "reset-user@example.com", None))
+        )
+      )
+      val acceptedUnknown = _execute_request(
+        component,
+        anonymousCtx,
+        Request.ofService(
+          "User",
+          "requestPasswordReset",
+          properties = List(Property("email", "missing@example.com", None))
+        )
+      )
+      acceptedKnown.toOption.isDefined shouldBe true
+      acceptedUnknown.toOption.isDefined shouldBe true
+      val resetDelivery = MessageDeliveryStubComponent.deliveries.lastOption.getOrElse(fail("missing reset notification"))
+      resetDelivery.recipient shouldBe "reset-user@example.com"
+      val resetToken = resetDelivery.attributes.getOrElse("reset_token", fail("missing reset token"))
+
+      val confirm = _execute_request(
+        component,
+        anonymousCtx,
+        Request.ofService(
+          "User",
+          "confirmPasswordReset",
+          properties = List(
+            Property("token", resetToken, None),
+            Property("newPassword", "secret-2", None)
+          )
+        )
+      )
+      confirm.toOption.isDefined shouldBe true
+
+      val oldLogin = _execute_request(
+        component,
+        anonymousCtx,
+        Request.ofService(
+          "User",
+          "login",
+          properties = List(
+            Property("username", "reset-user", None),
+            Property("password", "secret", None)
+          )
+        )
+      )
+      oldLogin.isSuccess shouldBe false
+
+      val newLogin = _execute_request(
+        component,
+        anonymousCtx,
+        Request.ofService(
+          "User",
+          "login",
+          properties = List(
+            Property("username", "reset-user", None),
+            Property("password", "secret-2", None)
+          )
+        )
+      )
+      newLogin.toOption.isDefined shouldBe true
+    }
+
+    "enroll two factor and require challenge completion for subsequent login" in {
+      val fixture = _fixture()
+      val component = _component()
+      val anonymousCtx = _with_security(
+        fixture,
+        "two_factor_owner",
+        withAccessToken = false,
+        extraAttributes = Map("anonymous" -> "true")
+      )
+
+      val registered = _execute_request(
+        component,
+        anonymousCtx,
+        Request.ofService(
+          "User",
+          "register",
+          properties = List(
+            Property("name", "Two Factor User", None),
+            Property("title", "member", None),
+            Property("loginName", "twofactor", None),
+            Property("email", "twofactor@example.com", None),
+            Property("password", "secret", None)
+          )
+        )
+      )
+      registered.toOption.isDefined shouldBe true
+
+      val loginBeforeEnroll = _execute_request(
+        component,
+        anonymousCtx,
+        Request.ofService(
+          "User",
+          "login",
+          properties = List(
+            Property("username", "twofactor", None),
+            Property("password", "secret", None)
+          )
+        )
+      )
+      loginBeforeEnroll.toOption.isDefined shouldBe true
+      val loginRecord = loginBeforeEnroll.toOption.get.asInstanceOf[RecordResponse].record
+      val userId = loginRecord.getString("userAccountId").getOrElse(fail("missing user account id"))
+      val authenticatedCtx = _with_security(fixture, "two_factor_owner", extraAttributes = Map("user_account_id" -> userId))
+
+      val enrolled = _execute_request(
+        component,
+        authenticatedCtx,
+        Request.ofService("User", "enrollTwoFactor", properties = List.empty)
+      )
+      enrolled.toOption.isDefined shouldBe true
+      MessageDeliveryStubComponent.deliveries.lastOption.map(_.subject) shouldBe Some(Some("Two-factor authentication enabled"))
+
+      MessageDeliveryStubComponent.clearDeliveries()
+      val challenged = _execute_request(
+        component,
+        anonymousCtx,
+        Request.ofService(
+          "User",
+          "login",
+          properties = List(
+            Property("username", "twofactor", None),
+            Property("password", "secret", None)
+          )
+        )
+      )
+      challenged.toOption.isDefined shouldBe true
+      val challengedRecord = challenged.toOption.get.asInstanceOf[RecordResponse].record
+      challengedRecord.getBoolean("twoFactorRequired") shouldBe Some(true)
+      val challengeId = challengedRecord.getString("challengeId").getOrElse(fail("missing challenge id"))
+      val challengeDelivery = MessageDeliveryStubComponent.deliveries.lastOption.getOrElse(fail("missing two-factor notification"))
+      challengeDelivery.recipient shouldBe "twofactor@example.com"
+      val code = challengeDelivery.attributes.getOrElse("code", fail("missing verification code"))
+
+      val invalid = _execute_request(
+        component,
+        anonymousCtx,
+        Request.ofService(
+          "User",
+          "verifyTwoFactorLogin",
+          properties = List(
+            Property("challengeId", challengeId, None),
+            Property("code", "000000", None)
+          )
+        )
+      )
+      invalid.isSuccess shouldBe false
+
+      val verified = _execute_request(
+        component,
+        anonymousCtx,
+        Request.ofService(
+          "User",
+          "verifyTwoFactorLogin",
+          properties = List(
+            Property("challengeId", challengeId, None),
+            Property("code", code, None)
+          )
+        )
+      )
+      verified.toOption.isDefined shouldBe true
+      val verifiedRecord = verified.toOption.get.asInstanceOf[RecordResponse].record
+      verifiedRecord.getString("accessSessionId") should not be empty
+    }
+
   private def _fixture(): _Fixture = {
     ComponentFactory.resetLoginWorkingSetForTest()
+    ComponentFactory.resetEphemeralSecurityStateForTest()
+    MessageDeliveryStubComponent.clearDeliveries()
     val datastoreSpace = new DataStoreSpace().addDataStore(DataStore.inMemorySearchable())
     val entityStoreSpace = org.goldenport.cncf.entity.EntityStoreSpace.create(
       ResolvedConfiguration(Configuration.empty, ConfigurationTrace.empty)
@@ -1404,7 +1606,8 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       origin = ComponentOrigin.Builtin
     )
     val component = GeneratedDomainComponentLoader.create(params).head
-    subsystem.add(Vector(component))
+    val notificationStub = MessageDeliveryStubComponent.Factory.create(ComponentCreate(subsystem = subsystem, origin = ComponentOrigin.Builtin)).participants.head
+    subsystem.add(Vector(notificationStub, component))
     subsystem.components.find(_.name == component.name).getOrElse(component)
   }
 

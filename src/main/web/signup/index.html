@@ -19,8 +19,9 @@
             <div id="signup-error" class="alert alert-danger d-none" role="alert"></div>
             <form id="signup-form">
               <div class="mb-3">
-                <label class="form-label" for="name">Display name</label>
+                <label class="form-label" for="name">Display Name</label>
                 <input class="form-control" id="name" name="name" autocomplete="name" required>
+                <div class="form-text">Shown in account-oriented UI. Your public social identifier is the handle below.</div>
               </div>
               <div class="mb-3">
                 <label class="form-label" for="title">Title</label>
@@ -29,14 +30,17 @@
               <div class="mb-3">
                 <label class="form-label" for="loginName">Handle</label>
                 <input class="form-control" id="loginName" name="loginName" autocomplete="username" required>
+                <div class="form-text">Must be unique. This is the public identifier used for @mentions and direct messages.</div>
               </div>
               <div class="mb-3">
                 <label class="form-label" for="email">Email</label>
                 <input class="form-control" id="email" name="email" type="email" autocomplete="email" required>
+                <div class="form-text">Used for sign-in, password reset, and optional two-factor notifications.</div>
               </div>
               <div class="mb-3">
                 <label class="form-label" for="password">Password</label>
                 <input class="form-control" id="password" name="password" type="password" autocomplete="new-password" required>
+                <div class="form-text">Choose a password you can keep secret. You can reset it later by email.</div>
               </div>
               <div class="d-grid gap-2">
                 <button class="btn btn-primary" type="submit">Create account</button>
