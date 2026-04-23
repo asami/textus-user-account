@@ -184,6 +184,73 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       result.toOption.isDefined shouldBe true
     }
 
+    "register a user with loginName and resolve it by loginName lookup" in {
+      val fixture = _fixture()
+      val component = _component()
+      val anonymousCtx = _with_security(
+        fixture,
+        "register_lookup_owner",
+        withAccessToken = false,
+        extraAttributes = Map("anonymous" -> "true")
+      )
+
+      val registered = _execute_request(
+        component,
+        anonymousCtx,
+        Request.ofService(
+          "User",
+          "register",
+          properties = List(
+            Property("name", "Alice", None),
+            Property("title", "member", None),
+            Property("loginName", "alice", None),
+            Property("email", "alice@example.com", None),
+            Property("password", "secret", None)
+          )
+        )
+      )
+      registered.toOption.isDefined shouldBe true
+
+      val lookedUp = _execute_request(
+        component,
+        anonymousCtx,
+        Request.ofService(
+          "User",
+          "lookupUserByLoginName",
+          properties = List(Property("loginName", "alice", None))
+        )
+      )
+      lookedUp.toOption.isDefined shouldBe true
+      val response = lookedUp.toOption.get.asInstanceOf[RecordResponse].record
+      response.getString("login_name").orElse(response.getString("loginName")) shouldBe Some("alice")
+      response.getString("email") shouldBe Some("alice@example.com")
+    }
+
+    "reject loginName lookup for suspended accounts" in {
+      val fixture = _fixture()
+      val component = _component()
+      given ExecutionContext = fixture.executionContext
+      val userId = _user_account_id("lookup_suspended")
+      _seed_user_account(
+        userId,
+        "lookup_suspended_owner",
+        "lookup-suspended@example.com",
+        loginName = Some("suspended-user"),
+        status = UserAccountStatus.Suspended
+      ).toOption.isDefined shouldBe true
+
+      val lookedUp = _execute_request(
+        component,
+        fixture.executionContext,
+        Request.ofService(
+          "User",
+          "lookupUserByLoginName",
+          properties = List(Property("loginName", "suspended-user", None))
+        )
+      )
+      lookedUp.isSuccess shouldBe false
+    }
+
     "resolve current user id from persisted access session token" in {
       val fixture = _fixture()
       given ExecutionContext = fixture.executionContext
@@ -1056,6 +1123,8 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
     id: EntityId,
     ownerPrincipalId: String,
     email: String,
+    loginName: Option[String] = None,
+    status: UserAccountStatus = UserAccountStatus.Registered,
     emailVerifiedAt: Option[String] = None,
     phoneNumber: Option[String] = None,
     phoneVerifiedAt: Option[String] = None
@@ -1085,7 +1154,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       mediaAttributes = MediaAttributes(None, Vector.empty, Vector.empty, Vector.empty, Vector.empty),
       contextualAttribute = ContextualAttributes(),
       email = email,
-      loginName = None,
+      loginName = loginName,
       externalSubjectId = None,
       emailVerifiedAt = emailVerifiedAt,
       phoneNumber = phoneNumber,
@@ -1095,7 +1164,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       suspendedAt = None,
       suspendedBy = None,
       suspensionReason = None,
-      status = UserAccountStatus.Registered
+      status = status
     )
     EntityStore.standard().create(entity).map(_ => ())
   }

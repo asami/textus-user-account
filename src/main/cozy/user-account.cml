@@ -757,6 +757,28 @@ Current user identity context.
 
 Current account projection.
 
+#### lookupUserByLoginName
+
+##### DESCRIPTION
+
+Resolves an active account by `loginName` for authenticated Cwitter mention and direct-message lookup.
+
+##### PRECONDITION
+
+The target `loginName` exists and belongs to an authenticatable account.
+
+##### POSTCONDITION
+
+The corresponding account projection is returned without mutating account state.
+
+##### IN
+
+Cwitter handle lookup input.
+
+##### OUT
+
+Resolved active account projection.
+
 ## Management
 
 ### DESCRIPTION
@@ -1138,6 +1160,7 @@ Command to create a regular account in the standard user registration flow.
 |-----------+--------+--------------|
 | name      | name   | 1            |
 | title     | string | 1            |
+| loginName | string | 1            |
 | email     | string | 1            |
 | password  | string | 1            |
 
@@ -1299,6 +1322,18 @@ Query to obtain account data for the current user.
 | name          | type     | multiplicity |
 |---------------+----------+--------------|
 | userAccountId | entityid | 1            |
+
+## UserLookupByLoginName
+
+### DESCRIPTION
+
+Query to resolve an active account by Cwitter handle (`loginName`).
+
+### ATTRIBUTE
+
+| name      | type   | multiplicity |
+|-----------+--------+--------------|
+| loginName | string | 1            |
 
 ## AdminListUserAccounts
 
@@ -1466,6 +1501,17 @@ QUERY
 
 ### INPUT
 UserGetMyAccount
+
+### OUTPUT
+UserAccountResult
+
+## lookupUserByLoginName
+
+### TYPE
+QUERY
+
+### INPUT
+UserLookupByLoginName
 
 ### OUTPUT
 UserAccountResult

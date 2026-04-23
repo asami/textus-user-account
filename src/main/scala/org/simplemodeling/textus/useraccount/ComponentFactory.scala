@@ -202,6 +202,12 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     ): UserService.GetMyAccountActionCall =
       GetMyAccountActionCallImpl(core, action)
 
+    override def createLookupUserByLoginNameActionCall(
+      core: ActionCall.Core,
+      action: UserService.LookupUserByLoginNameQuery
+    ): UserService.LookupUserByLoginNameActionCall =
+      LookupUserByLoginNameActionCallImpl(core, action)
+
   override val Management: UserAccountComponent.ManagementServiceFactory = new UserAccountComponent.ManagementServiceFactory:
     override def createCreateUserAccountActionCall(
       core: ActionCall.Core,
@@ -239,6 +245,8 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         userRecord = withDefaultStatus(record, defaultStatus)
         email <- exec_from(requiredString(userRecord, List("email")))
         _ <- requireEmailAvailable(email)
+        loginName <- exec_from(requiredString(userRecord, List("loginName", "login_name")))
+        _ <- requireLoginNameAvailable(loginName)
         status <- exec_from(requiredStatus(userRecord))
         _ <- exec_from(ComponentFactory.requireCreatableStatus(status))
         user0 <- exec_from(UserAccountCreate.createWithExecutionContextC(userRecord)(using executionContext))
@@ -287,6 +295,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       for
         status <- exec_from(optionalStatus(record))
         email <- exec_from(optionalString(record, List("email")))
+        loginName <- exec_from(optionalString(record, List("loginName", "login_name")))
         offset <- exec_from(optionalInt(record, List("offset")))
         limit <- exec_from(optionalInt(record, List("limit")))
         condition = UserAccountQuery(
@@ -294,7 +303,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           name = Condition.any[Name],
           title = Condition.any[String],
           email = email.map(Condition.is[String]).getOrElse(Condition.any[String]),
-          loginName = Condition.any[String],
+          loginName = loginName.map(Condition.is[String]).getOrElse(Condition.any[String]),
           externalSubjectId = Condition.any[String],
           emailVerifiedAt = Condition.any[String],
           phoneNumber = Condition.any[String],
@@ -473,6 +482,48 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         _ <- exec_from(ComponentFactory.requireEmailAvailable(email, users))
       yield
         ()
+
+    private def rawUserAccountsByLoginName(loginName: String): ExecUowM[Vector[UserAccountEntity]] =
+      val query = UserAccountQuery(
+        id = Condition.any[EntityId],
+        name = Condition.any[Name],
+        title = Condition.any[String],
+        email = Condition.any[String],
+        loginName = Condition.is(loginName),
+        externalSubjectId = Condition.any[String],
+        emailVerifiedAt = Condition.any[String],
+        phoneNumber = Condition.any[String],
+        phoneVerifiedAt = Condition.any[String],
+        lastLoginAt = Condition.any[String],
+        passwordChangedAt = Condition.any[String],
+        suspendedAt = Condition.any[String],
+        suspendedBy = Condition.any[String],
+        suspensionReason = Condition.any[String],
+        status = Condition.any[UserAccountStatus]
+      )
+      entity_search[UserAccountEntity](UserAccountQuery.collectionId, Query(query)).map(_.data)
+
+    private def userByLoginName(loginName: String): ExecUowM[UserAccountEntity] =
+      for
+        users <- rawUserAccountsByLoginName(loginName)
+        user <- exec_from(firstOrFailure(users, s"user account not found by loginName: $loginName"))
+      yield
+        user
+
+    private def requireLoginNameAvailable(loginName: String): ExecUowM[Unit] =
+      for
+        users <- rawUserAccountsByLoginName(loginName)
+        _ <- exec_from(ComponentFactory.requireLoginNameAvailable(loginName, users))
+      yield
+        ()
+
+    protected final def lookupUserByLoginName(record: Record): ExecUowM[OperationResponse] =
+      for
+        loginName <- exec_from(requiredString(record, List("loginName", "login_name")))
+        user <- userByLoginName(loginName)
+        _ <- exec_from(ComponentFactory.requireAuthenticatable(user.status))
+      yield
+        OperationResponse(user.toRecord())
 
     private def credentialsForUser(userId: EntityId): ExecUowM[Vector[CredentialEntity]] =
       val query = CredentialQuery(
@@ -1169,6 +1220,13 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     protected def build_Program: ExecUowM[OperationResponse] =
       getMyAccount(action.record)
 
+  private final case class LookupUserByLoginNameActionCallImpl(
+    core: ActionCall.Core,
+    override val action: UserService.LookupUserByLoginNameQuery
+  ) extends UserService.LookupUserByLoginNameActionCall, UserAccountActionSupport:
+    protected def build_Program: ExecUowM[OperationResponse] =
+      lookupUserByLoginName(action.record)
+
   private final case class VerifyMyEmailActionCallImpl(
     core: ActionCall.Core,
     override val action: UserService.VerifyMyEmailCommand
@@ -1418,6 +1476,15 @@ object ComponentFactory:
       Consequence.unit
     else
       Consequence.failure(s"User account email is already registered: $email")
+
+  def requireLoginNameAvailable(
+    loginName: String,
+    users: Vector[UserAccountEntity]
+  ): Consequence[Unit] =
+    if (users.isEmpty)
+      Consequence.unit
+    else
+      Consequence.failure(s"User account loginName is already registered: $loginName")
 
   def requireLoggedIn(id: EntityId)(using ExecutionContext): Consequence[Unit] =
     currentLoggedInUserId(id).map(_ => ())
