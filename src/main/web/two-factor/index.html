@@ -6,20 +6,32 @@
   <title>Enable Two-Factor Authentication</title>
   <link href="/web/assets/bootstrap.min.css" rel="stylesheet">
 </head>
-<body class="bg-light">
+<body class="bg-light" data-textus-page="two-factor">
   <main class="container py-5"><div class="row justify-content-center"><div class="col-12 col-md-7 col-lg-5"><div class="card shadow-sm"><div class="card-body p-4">
     <p class="text-uppercase text-muted small mb-2">Textus User Account</p>
-    <h1 class="h3 mb-3">Enable two-factor authentication</h1>
+    <h1 class="h3 mb-3" data-textus-role="heading">Enable two-factor authentication</h1>
     <p class="text-secondary">Email verification codes are optional. When enabled, sign-in requires your password and a short code sent by notification.</p>
     <div id="two-factor-error" class="alert alert-danger d-none" role="alert"></div>
     <div id="two-factor-success" class="alert alert-success d-none" role="alert">Two-factor authentication is enabled for this account.</div>
-    <form id="two-factor-form"><div class="d-grid gap-2"><button class="btn btn-primary" type="submit">Enable email two-factor</button></div></form>
+    <form id="two-factor-form"><div class="d-grid gap-2"><button class="btn btn-primary" type="submit" data-textus-role="submit">Enable email two-factor</button></div></form>
   </div></div></div></div></main>
   <script>
     (function() {
       const form = document.getElementById('two-factor-form');
       const error = document.getElementById('two-factor-error');
       const success = document.getElementById('two-factor-success');
+
+      function structuredErrorMessage(text, status, fallback) {
+        try {
+          const payload = text ? JSON.parse(text) : {};
+          const error = payload && payload.error ? payload.error : null;
+          if (error && error.message) {
+            const code = error.detailCode || error.code || "";
+            return code ? error.message + " (" + code + ")" : error.message;
+          }
+        } catch (_) {}
+        return text || fallback || ("Request failed (" + status + ").");
+      }
       form.addEventListener('submit', async function(event) {
         event.preventDefault();
         error.classList.add('d-none');
@@ -35,7 +47,7 @@
             success.classList.remove('d-none');
             return;
           }
-          error.textContent = (await response.text()) || 'Unable to enable two-factor authentication.';
+          error.textContent = structuredErrorMessage(await response.text(), response.status, 'Unable to enable two-factor authentication.');
           error.classList.remove('d-none');
         } catch (_) {
           error.textContent = 'Unable to reach the account service. Restart the local server and try again.';

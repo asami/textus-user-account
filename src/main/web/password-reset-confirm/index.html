@@ -6,22 +6,22 @@
   <title>Choose a New Password</title>
   <link href="/web/assets/bootstrap.min.css" rel="stylesheet">
 </head>
-<body class="bg-light">
+<body class="bg-light" data-textus-page="password-reset-confirm">
   <main class="container py-5"><div class="row justify-content-center"><div class="col-12 col-md-7 col-lg-5"><div class="card shadow-sm"><div class="card-body p-4">
     <p class="text-uppercase text-muted small mb-2">Textus User Account</p>
-    <h1 class="h3 mb-3">Choose a new password</h1>
+    <h1 class="h3 mb-3" data-textus-role="heading">Choose a new password</h1>
     <div id="confirm-error" class="alert alert-danger d-none" role="alert"></div>
     <form id="confirm-form">
-      <div class="mb-3">
+      <div class="mb-3" data-textus-field="token">
         <label class="form-label" for="token">Reset token</label>
         <input class="form-control" id="token" name="token" required>
       </div>
-      <div class="mb-3">
+      <div class="mb-3" data-textus-field="newPassword">
         <label class="form-label" for="newPassword">New password</label>
         <input class="form-control" id="newPassword" name="newPassword" type="password" autocomplete="new-password" required>
       </div>
       <div class="d-grid gap-2">
-        <button class="btn btn-primary" type="submit">Update password</button>
+        <button class="btn btn-primary" type="submit" data-textus-role="submit">Update password</button>
       </div>
     </form>
   </div></div></div></div></main>
@@ -33,6 +33,18 @@
       if (token) document.getElementById('token').value = token;
       const form = document.getElementById('confirm-form');
       const error = document.getElementById('confirm-error');
+
+      function structuredErrorMessage(text, status, fallback) {
+        try {
+          const payload = text ? JSON.parse(text) : {};
+          const error = payload && payload.error ? payload.error : null;
+          if (error && error.message) {
+            const code = error.detailCode || error.code || "";
+            return code ? error.message + " (" + code + ")" : error.message;
+          }
+        } catch (_) {}
+        return text || fallback || ("Request failed (" + status + ").");
+      }
       form.addEventListener('submit', async function(event) {
         event.preventDefault();
         error.classList.add('d-none');
@@ -47,7 +59,7 @@
             window.location.href = '/web/textus-user-account/password-reset/success?returnTo=' + encodeURIComponent(returnTo);
             return;
           }
-          error.textContent = (await response.text()) || 'Unable to reset password.';
+          error.textContent = structuredErrorMessage(await response.text(), response.status, 'Unable to reset password.');
           error.classList.remove('d-none');
         } catch (_) {
           error.textContent = 'Unable to reach the account service. Restart the local server and try again.';

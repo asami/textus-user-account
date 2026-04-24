@@ -6,22 +6,22 @@
   <title>Verification Code</title>
   <link href="/web/assets/bootstrap.min.css" rel="stylesheet">
 </head>
-<body class="bg-light">
+<body class="bg-light" data-textus-page="two-factor-challenge">
   <main class="container py-5"><div class="row justify-content-center"><div class="col-12 col-md-7 col-lg-5"><div class="card shadow-sm"><div class="card-body p-4">
     <p class="text-uppercase text-muted small mb-2">Textus User Account</p>
-    <h1 class="h3 mb-3">Enter verification code</h1>
+    <h1 class="h3 mb-3" data-textus-role="heading">Enter verification code</h1>
     <p class="text-secondary">A verification code was issued for this sign-in attempt.</p>
     <div id="challenge-error" class="alert alert-danger d-none" role="alert"></div>
     <form id="challenge-form">
-      <div class="mb-3">
+      <div class="mb-3" data-textus-field="challengeId">
         <label class="form-label" for="challengeId">Challenge ID</label>
         <input class="form-control" id="challengeId" name="challengeId" required>
       </div>
-      <div class="mb-3">
+      <div class="mb-3" data-textus-field="code">
         <label class="form-label" for="code">Verification code</label>
         <input class="form-control" id="code" name="code" inputmode="numeric" autocomplete="one-time-code" required>
       </div>
-      <div class="d-grid gap-2"><button class="btn btn-primary" type="submit">Complete sign in</button></div>
+      <div class="d-grid gap-2"><button class="btn btn-primary" type="submit" data-textus-role="submit">Complete sign in</button></div>
     </form>
   </div></div></div></div></main>
   <script>
@@ -39,6 +39,18 @@
         const match = (targetPath || '').match(/^\/web\/([^/?#]+)/);
         return 'textus-session-' + normalizedSegment(match ? match[1] : 'textus-user-account');
       }
+
+      function structuredErrorMessage(text, status, fallback) {
+        try {
+          const payload = text ? JSON.parse(text) : {};
+          const error = payload && payload.error ? payload.error : null;
+          if (error && error.message) {
+            const code = error.detailCode || error.code || "";
+            return code ? error.message + " (" + code + ")" : error.message;
+          }
+        } catch (_) {}
+        return text || fallback || ("Request failed (" + status + ").");
+      }
       form.addEventListener('submit', async function(event) {
         event.preventDefault();
         error.classList.add('d-none');
@@ -53,7 +65,7 @@
           let payload = {};
           try { payload = text ? JSON.parse(text) : {}; } catch (_) { payload = {}; }
           if (!response.ok) {
-            error.textContent = text || 'Unable to verify code.';
+            error.textContent = structuredErrorMessage(text, response.status, 'Unable to verify code.');
             error.classList.remove('d-none');
             return;
           }

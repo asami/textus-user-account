@@ -7,72 +7,72 @@
   <link href="/web/assets/bootstrap.min.css" rel="stylesheet">
   <link href="/web/assets/textus-widgets.css" rel="stylesheet">
 </head>
-<body class="bg-light">
+<body class="bg-light" data-textus-page="signup">
   <main class="container py-5">
     <div class="row justify-content-center">
       <div class="col-12 col-lg-8">
         <div class="card shadow-sm">
           <div class="card-body p-4 p-lg-5">
             <p class="text-uppercase text-muted small mb-2">Textus User Account</p>
-            <h1 class="h3 mb-3">Create account</h1>
-            <p class="text-secondary">Register a generic Textus account. Application-specific setup comes later.</p>
+            <h1 class="h3 mb-3" data-textus-role="heading">Create account</h1>
+            <p class="text-secondary" data-textus-role="subtitle">Register a generic Textus account. Application-specific setup comes later.</p>
             <div id="signup-error" class="alert alert-danger d-none" role="alert"></div>
             <form id="signup-form">
               <div class="row g-3">
-                <div class="col-12 col-md-6">
+                <div class="col-12 col-md-6" data-textus-field="name">
                   <label class="form-label" for="name">Full name</label>
                   <input class="form-control" id="name" name="name" autocomplete="name" required>
                   <div class="form-text">Common account name used across shared Textus components.</div>
                 </div>
-                <div class="col-12 col-md-6">
+                <div class="col-12 col-md-6" data-textus-field="title">
                   <label class="form-label" for="title">Title</label>
                   <input class="form-control" id="title" name="title" value="member" autocomplete="organization-title" required>
                   <div class="form-text">Generic account role or salutation. Adjust if your deployment uses a different default.</div>
                 </div>
-                <div class="col-12 col-md-6">
+                <div class="col-12 col-md-6" data-textus-field="loginName">
                   <label class="form-label" for="loginName">Login name</label>
                   <input class="form-control" id="loginName" name="loginName" autocomplete="username" required>
                   <div class="form-text">Must be unique. Used as the account login name in the current Textus user-account model.</div>
                 </div>
-                <div class="col-12 col-md-6">
+                <div class="col-12 col-md-6" data-textus-field="email">
                   <label class="form-label" for="email">Email</label>
                   <input class="form-control" id="email" name="email" type="email" autocomplete="email" required>
                   <div class="form-text">Used for sign-in, password reset, and optional two-factor notifications.</div>
                 </div>
-                <div class="col-12 col-md-6">
+                <div class="col-12 col-md-6" data-textus-field="phoneNumber">
                   <label class="form-label" for="phoneNumber">Phone number</label>
                   <input class="form-control" id="phoneNumber" name="phoneNumber" type="tel" autocomplete="tel">
                   <div class="form-text">Optional SMS/security contact for generic account management.</div>
                 </div>
-                <div class="col-12">
+                <div class="col-12" data-textus-field="password">
                   <label class="form-label" for="password">Password</label>
                   <input class="form-control" id="password" name="password" type="password" autocomplete="new-password" required>
                   <div class="form-text">Choose a password you can keep secret. You can reset it later by email.</div>
                 </div>
-                <div class="col-12">
+                <div class="col-12" data-textus-field="addressSection">
                   <hr class="my-2">
                   <h2 class="h6 mb-2">Address</h2>
                   <p class="text-secondary small mb-0">Optional generic contact information for shared account/profile use.</p>
                 </div>
-                <div class="col-12 col-md-4">
+                <div class="col-12 col-md-4" data-textus-field="postalCode">
                   <label class="form-label" for="postalCode">Postal code</label>
                   <input class="form-control" id="postalCode" name="postalCode" autocomplete="postal-code">
                 </div>
-                <div class="col-12 col-md-4">
+                <div class="col-12 col-md-4" data-textus-field="region">
                   <label class="form-label" for="region">Region / State</label>
                   <input class="form-control" id="region" name="region" autocomplete="address-level1">
                 </div>
-                <div class="col-12 col-md-4">
+                <div class="col-12 col-md-4" data-textus-field="locality">
                   <label class="form-label" for="locality">City / Locality</label>
                   <input class="form-control" id="locality" name="locality" autocomplete="address-level2">
                 </div>
-                <div class="col-12">
+                <div class="col-12" data-textus-field="streetAddress">
                   <label class="form-label" for="streetAddress">Street address</label>
                   <textarea class="form-control" id="streetAddress" name="streetAddress" rows="2" autocomplete="street-address"></textarea>
                 </div>
               </div>
               <div class="d-grid gap-2 mt-4">
-                <button class="btn btn-primary" type="submit">Create account</button>
+                <button class="btn btn-primary" type="submit" data-textus-role="submit">Create account</button>
                 <a id="signin-link" class="btn btn-outline-secondary" href="#">Back to sign in</a>
               </div>
             </form>
@@ -90,6 +90,18 @@
       const pathname = window.location.pathname;
       const signinPath = pathname.endsWith("/signup") ? pathname.replace(/\/signup$/, pathname.includes("/textus-user-account/") ? "/signin" : "/login") : "/web/cwitter/login";
       document.getElementById("signin-link").setAttribute("href", signinPath + "?returnTo=" + encodeURIComponent(returnTo));
+
+      function structuredErrorMessage(text, status, fallback) {
+        try {
+          const payload = text ? JSON.parse(text) : {};
+          const error = payload && payload.error ? payload.error : null;
+          if (error && error.message) {
+            const code = error.detailCode || error.code || "";
+            return code ? error.message + " (" + code + ")" : error.message;
+          }
+        } catch (_) {}
+        return text || fallback || ("Request failed (" + status + ").");
+      }
       form.addEventListener("submit", async function(event) {
         event.preventDefault();
         error.classList.add("d-none");
@@ -107,7 +119,7 @@
             return;
           }
           const text = await response.text();
-          error.textContent = text || ("Registration failed (" + response.status + ").");
+          error.textContent = structuredErrorMessage(text, response.status, "Registration failed (" + response.status + ").");
           error.classList.remove("d-none");
         } catch (_) {
           error.textContent = "Unable to reach the account service. Restart the local server and try again.";

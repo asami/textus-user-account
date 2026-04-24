@@ -7,30 +7,30 @@
   <link href="/web/assets/bootstrap.min.css" rel="stylesheet">
   <link href="/web/assets/textus-widgets.css" rel="stylesheet">
 </head>
-<body class="bg-light">
+<body class="bg-light" data-textus-page="signin">
   <main class="container py-5">
     <div class="row justify-content-center">
       <div class="col-12 col-md-7 col-lg-5">
         <div class="card shadow-sm">
           <div class="card-body p-4">
             <p class="text-uppercase text-muted small mb-2">Textus User Account</p>
-            <h1 class="h3 mb-3">Sign in</h1>
-            <p class="text-secondary">Use your login name or email to continue to the application.</p>
+            <h1 class="h3 mb-3" data-textus-role="heading">Sign in</h1>
+            <p class="text-secondary" data-textus-role="subtitle">Use your login name or email to continue to the application.</p>
             <div id="login-error" class="alert alert-danger d-none" role="alert"></div>
             <form id="login-form" method="post">
-              <div class="mb-3">
+              <div class="mb-3" data-textus-field="username">
                 <label class="form-label" for="username">Login name or Email</label>
                 <input class="form-control" id="username" name="username" autocomplete="username" required>
                 <div class="form-text">Use the login name or email registered for your Textus account.</div>
               </div>
-              <div class="mb-3">
+              <div class="mb-3" data-textus-field="password">
                 <label class="form-label" for="password">Password</label>
                 <input class="form-control" id="password" name="password" type="password" autocomplete="current-password" required>
                 <div class="form-text">Use the password registered for your Textus account.</div>
               </div>
               <input id="return-to" type="hidden" name="returnTo">
               <div class="d-grid gap-2">
-                <button class="btn btn-primary" type="submit">Sign in</button>
+                <button class="btn btn-primary" type="submit" data-textus-role="submit">Sign in</button>
                 <a id="signup-link" class="btn btn-outline-secondary" href="#">Create account</a>
                 <a id="reset-link" class="btn btn-link" href="#">Forgot password?</a>
               </div>
@@ -109,6 +109,18 @@
         return payload.accessSessionId || payload.access_session_id || "";
       }
 
+
+      function structuredErrorMessage(text, status, fallback) {
+        try {
+          const payload = text ? JSON.parse(text) : {};
+          const error = payload && payload.error ? payload.error : null;
+          if (error && error.message) {
+            const code = error.detailCode || error.code || "";
+            return code ? error.message + " (" + code + ")" : error.message;
+          }
+        } catch (_) {}
+        return text || fallback || ("Request failed (" + status + ").");
+      }
       form.addEventListener("submit", async function(event) {
         event.preventDefault();
         box.classList.add("d-none");
@@ -132,7 +144,7 @@
           }
           const payload = parsePayload(text);
           if (!effectiveResponse.ok) {
-            box.textContent = text || ("Sign-in failed (" + effectiveResponse.status + ").");
+            box.textContent = structuredErrorMessage(text, effectiveResponse.status, "Sign-in failed (" + effectiveResponse.status + ").");
             box.classList.remove("d-none");
             return;
           }
