@@ -1,4 +1,26 @@
 defaultView: summary
+expose:
+  textus-user-account.user.register: public
+  textus-user-account.user.login: public
+  textus-user-account.user.request-password-reset: public
+  textus-user-account.user.confirm-password-reset: public
+  textus-user-account.user.verify-two-factor-login: public
+  textus-user-account.user.enroll-two-factor: protected
+
+form:
+  textus-user-account.user.register:
+    enabled: true
+  textus-user-account.user.login:
+    enabled: true
+  textus-user-account.user.request-password-reset:
+    enabled: true
+  textus-user-account.user.confirm-password-reset:
+    enabled: true
+  textus-user-account.user.verify-two-factor-login:
+    enabled: true
+  textus-user-account.user.enroll-two-factor:
+    enabled: true
+
 apps:
   - name: signin
     kind: static-form

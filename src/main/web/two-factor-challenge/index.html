@@ -42,27 +42,32 @@
       form.addEventListener('submit', async function(event) {
         event.preventDefault();
         error.classList.add('d-none');
-        const response = await fetch('/form-api/textus-user-account/user/verify-two-factor-login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams(new FormData(form)),
-          credentials: 'same-origin'
-        });
-        const text = await response.text();
-        let payload = {};
-        try { payload = text ? JSON.parse(text) : {}; } catch (_) { payload = {}; }
-        if (!response.ok) {
-          error.textContent = text || 'Unable to verify code.';
+        try {
+          const response = await fetch('/form-api/textus-user-account/user/verify-two-factor-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams(new FormData(form)),
+            credentials: 'same-origin'
+          });
+          const text = await response.text();
+          let payload = {};
+          try { payload = text ? JSON.parse(text) : {}; } catch (_) { payload = {}; }
+          if (!response.ok) {
+            error.textContent = text || 'Unable to verify code.';
+            error.classList.remove('d-none');
+            return;
+          }
+          if (payload.accessSessionId) {
+            document.cookie = sessionCookieName(returnTo) + '=' + encodeURIComponent(payload.accessSessionId) + '; Path=/; SameSite=Lax';
+            window.location.href = returnTo;
+            return;
+          }
+          error.textContent = 'Verification did not return a session.';
           error.classList.remove('d-none');
-          return;
+        } catch (_) {
+          error.textContent = 'Unable to reach the account service. Restart the local server and try again.';
+          error.classList.remove('d-none');
         }
-        if (payload.accessSessionId) {
-          document.cookie = sessionCookieName(returnTo) + '=' + encodeURIComponent(payload.accessSessionId) + '; Path=/; SameSite=Lax';
-          window.location.href = returnTo;
-          return;
-        }
-        error.textContent = 'Verification did not return a session.';
-        error.classList.remove('d-none');
       });
     })();
   </script>

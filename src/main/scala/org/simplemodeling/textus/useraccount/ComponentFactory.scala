@@ -579,24 +579,26 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         ()
 
     private def rawUserAccountsByLoginName(loginName: String): ExecUowM[Vector[UserAccountEntity]] =
-      val query = UserAccountQuery(
-        id = Condition.any[EntityId],
-        name = Condition.any[Name],
-        title = Condition.any[String],
-        email = Condition.any[String],
-        loginName = Condition.is(loginName),
-        externalSubjectId = Condition.any[String],
-        emailVerifiedAt = Condition.any[String],
-        phoneNumber = Condition.any[String],
-        phoneVerifiedAt = Condition.any[String],
-        lastLoginAt = Condition.any[String],
-        passwordChangedAt = Condition.any[String],
-        suspendedAt = Condition.any[String],
-        suspendedBy = Condition.any[String],
-        suspensionReason = Condition.any[String],
-        status = Condition.any[UserAccountStatus]
-      )
-      entity_search[UserAccountEntity](UserAccountQuery.collectionId, Query(query)).map(_.data)
+      for
+        records <- rawRecords(UserAccountQuery.collectionId)
+        ids <- exec_from(
+          records
+            .filter(record =>
+              record.getString("login_name").contains(loginName) ||
+              record.getString("loginName").contains(loginName)
+            )
+            .traverse(_entity_id_of)
+        )
+        users <- exec_from(
+          ids.traverse(id =>
+            EntityStore
+              .standard()
+              .load[UserAccountEntity](id)(using summon, executionContext)
+              .flatMap(x => Consequence.successOrEntityNotFound(x)(id))
+          )
+        )
+      yield
+        users
 
     private def userByLoginName(loginName: String): ExecUowM[UserAccountEntity] =
       for
@@ -639,7 +641,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       for
         refreshIssued <- issueRefreshSession(
           user.id,
-          refreshTokenFromSecurityContext(),
+          None,
           clientIdFromSecurityContext(),
           deviceInfoFromSecurityContext(),
           ipAddressFromSecurityContext(),
@@ -647,7 +649,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         )
         issued <- issueAccessSession(
           user.id,
-          accessTokenFromSecurityContext(),
+          None,
           Some(refreshIssued.sessionId),
           clientIdFromSecurityContext(),
           deviceInfoFromSecurityContext(),
@@ -963,7 +965,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           "ipAddress" -> ipAddress,
           "userAgent" -> userAgent
         )
-        session0 <- exec_from(AccessSessionCreate.createWithExecutionContextC(sessionRecord)(using executionContext))
+        session0 <- exec_from(AccessSessionCreate.createC(sessionRecord))
         session = session0.withResourceAttributes(ResourceAttributes(activationStatus = ActivationStatus.Active))
         created <- entity_create(session)
       yield
@@ -991,7 +993,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           "ipAddress" -> ipAddress,
           "userAgent" -> userAgent
         )
-        session0 <- exec_from(RefreshSessionCreate.createWithExecutionContextC(sessionRecord)(using executionContext))
+        session0 <- exec_from(RefreshSessionCreate.createC(sessionRecord))
         session = session0.withResourceAttributes(ResourceAttributes(activationStatus = ActivationStatus.Active))
         created <- entity_create(session)
         _ <- predecessor match
@@ -1885,7 +1887,7 @@ object ComponentFactory:
     def authenticate(request: AuthenticationRequest)(using ctx: ExecutionContext): Consequence[Option[AuthenticationResult]] =
       _request_session_id(request) match
         case Some(sessionId) =>
-          authenticateSessionId(sessionId).map(Some(_))
+          _optional_session_authenticate(sessionId)
         case None =>
           request.accessToken match
             case Some(token) =>
@@ -1901,16 +1903,45 @@ object ComponentFactory:
     override def logout(request: AuthenticationRequest)(using ctx: ExecutionContext): Consequence[Option[SessionContext]] =
       _request_session_id(request) match
         case Some(sessionId) =>
-          logoutSessionId(sessionId).map(Some(_))
+          _optional_session_logout(sessionId)
         case None =>
           Consequence.success(None)
 
     override def currentSession(request: AuthenticationRequest)(using ctx: ExecutionContext): Consequence[Option[AuthenticationResult]] =
       _request_session_id(request) match
         case Some(sessionId) =>
-          authenticateSessionId(sessionId).map(Some(_))
+          _optional_session_authenticate(sessionId)
         case None =>
           authenticate(request)
+  }
+
+  private def _optional_session_authenticate(
+    sessionId: String
+  )(using ctx: ExecutionContext): Consequence[Option[AuthenticationResult]] =
+    authenticateSessionId(sessionId) match
+      case Consequence.Success(result) =>
+        Consequence.success(Some(result))
+      case m: Consequence.Failure[?] if _is_missing_or_invalid_session(m) =>
+        Consequence.success(None)
+      case m: Consequence.Failure[?] =>
+        m.asInstanceOf[Consequence[Option[AuthenticationResult]]]
+
+  private def _optional_session_logout(
+    sessionId: String
+  )(using ctx: ExecutionContext): Consequence[Option[SessionContext]] =
+    logoutSessionId(sessionId) match
+      case Consequence.Success(result) =>
+        Consequence.success(Some(result))
+      case m: Consequence.Failure[?] if _is_missing_or_invalid_session(m) =>
+        Consequence.success(None)
+      case m: Consequence.Failure[?] =>
+        m.asInstanceOf[Consequence[Option[SessionContext]]]
+
+  private def _is_missing_or_invalid_session(
+    m: Consequence.Failure[?]
+  ): Boolean = {
+    val shown = m.conclusion.show
+    shown.contains("Entity.NotFound[") || shown.contains("invalid session") || shown.contains("Invalid UniversalId format")
   }
 
   private def _provider_login(
@@ -2135,7 +2166,7 @@ object ComponentFactory:
         "ipAddress" -> ipAddress,
         "userAgent" -> userAgent
       )
-      session0 <- RefreshSessionCreate.createWithExecutionContextC(sessionRecord)
+      session0 <- RefreshSessionCreate.createC(sessionRecord)
       session = session0.withResourceAttributes(ResourceAttributes(activationStatus = ActivationStatus.Active))
       created <- EntityStore.standard().create(session)
       _ <- predecessor match
@@ -2311,6 +2342,7 @@ object ComponentFactory:
         "email" -> user.email,
         "login_name" -> user.loginName.orNull,
         "handle" -> user.loginName.orNull,
+        "shortid" -> user.id.parts.entropy,
         "access_token" -> accessToken
       ).collect { case (k, v) if v != null && v.nonEmpty => k -> v },
       capabilities = Set(Capability("user")),
@@ -2343,6 +2375,7 @@ object ComponentFactory:
         "email" -> user.email,
         "login_name" -> user.loginName.orNull,
         "handle" -> user.loginName.orNull,
+        "shortid" -> user.id.parts.entropy,
         "refresh_token" -> refreshToken
       ).collect { case (k, v) if v != null && v.nonEmpty => k -> v },
       capabilities = Set(Capability("user")),
@@ -2374,7 +2407,8 @@ object ComponentFactory:
         "privilege" -> "user",
         "email" -> user.email,
         "login_name" -> user.loginName.orNull,
-        "handle" -> user.loginName.orNull
+        "handle" -> user.loginName.orNull,
+        "shortid" -> user.id.parts.entropy
       ).collect { case (k, v) if v != null && v.nonEmpty => k -> v },
       capabilities = Set(Capability("user")),
       level = SecurityLevel("user"),

@@ -41,18 +41,23 @@
       form.addEventListener('submit', async function(event) {
         event.preventDefault();
         error.classList.add('d-none');
-        const response = await fetch('/form-api/textus-user-account/user/request-password-reset', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams(new FormData(form)),
-          credentials: 'same-origin'
-        });
-        if (response.ok) {
-          window.location.href = '/web/textus-user-account/password-reset/sent?returnTo=' + encodeURIComponent(returnTo);
-          return;
+        try {
+          const response = await fetch('/form-api/textus-user-account/user/request-password-reset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams(new FormData(form)),
+            credentials: 'omit'
+          });
+          if (response.ok) {
+            window.location.href = '/web/textus-user-account/password-reset/sent?returnTo=' + encodeURIComponent(returnTo);
+            return;
+          }
+          error.textContent = (await response.text()) || 'Unable to request password reset.';
+          error.classList.remove('d-none');
+        } catch (_) {
+          error.textContent = 'Unable to reach the account service. Restart the local server and try again.';
+          error.classList.remove('d-none');
         }
-        error.textContent = (await response.text()) || 'Unable to request password reset.';
-        error.classList.remove('d-none');
       });
     })();
   </script>

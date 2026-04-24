@@ -24,18 +24,23 @@
         event.preventDefault();
         error.classList.add('d-none');
         success.classList.add('d-none');
-        const response = await fetch('/form-api/textus-user-account/user/enroll-two-factor', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams(),
-          credentials: 'same-origin'
-        });
-        if (response.ok) {
-          success.classList.remove('d-none');
-          return;
+        try {
+          const response = await fetch('/form-api/textus-user-account/user/enroll-two-factor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams(),
+            credentials: 'same-origin'
+          });
+          if (response.ok) {
+            success.classList.remove('d-none');
+            return;
+          }
+          error.textContent = (await response.text()) || 'Unable to enable two-factor authentication.';
+          error.classList.remove('d-none');
+        } catch (_) {
+          error.textContent = 'Unable to reach the account service. Restart the local server and try again.';
+          error.classList.remove('d-none');
         }
-        error.textContent = (await response.text()) || 'Unable to enable two-factor authentication.';
-        error.classList.remove('d-none');
       });
     })();
   </script>

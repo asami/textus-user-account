@@ -873,7 +873,7 @@ Current account projection.
 
 ##### DESCRIPTION
 
-Resolves an active account by `loginName` for authenticated Cwitter mention and direct-message lookup.
+Resolves an active account by `loginName` for authenticated account-identity lookup.
 
 ##### PRECONDITION
 
@@ -885,7 +885,7 @@ The corresponding account projection is returned without mutating account state.
 
 ##### IN
 
-Cwitter handle lookup input.
+Login-name lookup input.
 
 ##### OUT
 
@@ -1439,7 +1439,7 @@ Query to obtain account data for the current user.
 
 ### DESCRIPTION
 
-Query to resolve an active account by Cwitter handle (`loginName`).
+Query to resolve an active account by `loginName`.
 
 ### ATTRIBUTE
 

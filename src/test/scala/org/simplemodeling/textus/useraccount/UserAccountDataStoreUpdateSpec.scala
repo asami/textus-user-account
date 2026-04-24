@@ -150,6 +150,46 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       response.getString("refreshSessionId") should not be empty
     }
 
+    "execute login under an authenticated caller context without inheriting the caller principal into provider sessions" in {
+      val fixture = _fixture()
+      val component = _component()
+      given ExecutionContext = fixture.executionContext
+      val ownerPrincipalId = "integration_owner"
+      val userId = _user_account_id("login_authenticated_caller")
+      _seed_user_account(userId, ownerPrincipalId, "integration-authenticated@example.com", loginName = Some("authenticated-login")).toOption.isDefined shouldBe true
+      _seed_credential(userId, ownerPrincipalId, "secret").toOption.isDefined shouldBe true
+
+      val staleAccessSessionId = _access_session_id("stale_authenticated_caller").print
+      val authenticatedCtx = _with_security(
+        fixture,
+        userId.print,
+        extraAttributes = Map("access_token" -> staleAccessSessionId)
+      )
+      val result = _execute_request(
+        component,
+        authenticatedCtx,
+        Request.ofService(
+          "User",
+          "login",
+          properties = List(
+            Property("username", "authenticated-login", None),
+            Property("password", "secret", None)
+          )
+        )
+      )
+
+      result.toOption.isDefined shouldBe true
+      val response = result.toOption.get.asInstanceOf[RecordResponse].record
+      response.getString("accessSessionId") should not be empty
+      response.getString("refreshSessionId") should not be empty
+      val accessCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId).toOption.get
+      val refreshCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId).toOption.get
+      val accessRecords = summon[ExecutionContext].dataStoreSpace.search(accessCid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
+      val refreshRecords = summon[ExecutionContext].dataStoreSpace.search(refreshCid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
+      accessRecords.count(_.getString("user_account_id").contains(userId.print)) shouldBe 1
+      refreshRecords.count(_.getString("user_account_id").contains(userId.print)) shouldBe 1
+    }
+
     "execute login after side-effect update wiring" in {
       val fixture = _fixture()
       val component = _component()
@@ -587,7 +627,34 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         "x-textus-session" -> "missing-session"
       )))
 
-      result.toOption.isDefined shouldBe false
+      result.toOption shouldBe Some(None)
+    }
+
+    "treat invalid provider current session as anonymous" in {
+      val fixture = _fixture()
+      val component = _component()
+      given ExecutionContext = fixture.executionContext
+      val provider = component.authenticationProviders.head
+
+      val result = provider.currentSession(AuthenticationRequest(Map(
+        "x-textus-session" -> "missing-session"
+      )))
+
+      result.toOption shouldBe Some(None)
+    }
+
+    "treat invalid provider logout as already cleared" in {
+      val fixture = _fixture()
+      val component = _component()
+      given ExecutionContext = fixture.executionContext
+      val provider = component.authenticationProviders.head
+
+      val result = provider.logout(AuthenticationRequest(Map(
+        "x-textus-session" -> "missing-session"
+      )))
+
+      result.toOption.isDefined shouldBe true
+      result.toOption.flatten shouldBe empty
     }
 
     "rotate internal token state while preserving external session id" in {

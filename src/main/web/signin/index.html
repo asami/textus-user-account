@@ -15,13 +15,13 @@
           <div class="card-body p-4">
             <p class="text-uppercase text-muted small mb-2">Textus User Account</p>
             <h1 class="h3 mb-3">Sign in</h1>
-            <p class="text-secondary">Use your handle or email to continue to the application.</p>
+            <p class="text-secondary">Use your login name or email to continue to the application.</p>
             <div id="login-error" class="alert alert-danger d-none" role="alert"></div>
             <form id="login-form" method="post">
               <div class="mb-3">
-                <label class="form-label" for="username">Handle or Email</label>
+                <label class="form-label" for="username">Login name or Email</label>
                 <input class="form-control" id="username" name="username" autocomplete="username" required>
-                <div class="form-text">Handle is your public name for @mentions and direct messages. Email also works for sign-in.</div>
+                <div class="form-text">Use the login name or email registered for your Textus account.</div>
               </div>
               <div class="mb-3">
                 <label class="form-label" for="password">Password</label>
@@ -76,6 +76,39 @@
         box.classList.remove("d-none");
       }
 
+      function isJobId(value) {
+        return /^cncf-job-job-/.test((value || "").trim());
+      }
+
+      async function awaitJobResult(jobId) {
+        const body = new URLSearchParams();
+        body.set("id", jobId);
+        const response = await fetch("/rest/v1/job_control/job/await_job_result", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          credentials: "omit",
+          body
+        });
+        const text = await response.text();
+        return { response, text };
+      }
+
+      function parsePayload(text) {
+        try {
+          return text ? JSON.parse(text) : {};
+        } catch (_) {
+          return {};
+        }
+      }
+
+      function challengeIdOf(payload) {
+        return payload.challengeId || payload.challenge_id || "";
+      }
+
+      function accessSessionIdOf(payload) {
+        return payload.accessSessionId || payload.access_session_id || "";
+      }
+
       form.addEventListener("submit", async function(event) {
         event.preventDefault();
         box.classList.add("d-none");
@@ -83,38 +116,44 @@
         const body = new URLSearchParams();
         body.set("username", document.getElementById("username").value);
         body.set("password", document.getElementById("password").value);
-        const response = await fetch("/form-api/textus-user-account/user/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          credentials: "same-origin",
-          body
-        });
-        const text = await response.text();
-        let payload = {};
         try {
-          payload = text ? JSON.parse(text) : {};
-        } catch (_) {
-          payload = {};
-        }
-        if (!response.ok) {
-          box.textContent = text || ("Sign-in failed (" + response.status + ").");
+          const response = await fetch("/form-api/textus-user-account/user/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            credentials: "omit",
+            body
+          });
+          let text = await response.text();
+          let effectiveResponse = response;
+          if (response.ok && isJobId(text)) {
+            const awaited = await awaitJobResult(text.trim());
+            effectiveResponse = awaited.response;
+            text = awaited.text;
+          }
+          const payload = parsePayload(text);
+          if (!effectiveResponse.ok) {
+            box.textContent = text || ("Sign-in failed (" + effectiveResponse.status + ").");
+            box.classList.remove("d-none");
+            return;
+          }
+          if (payload.twoFactorRequired && challengeIdOf(payload)) {
+            const url = new URL(challengePath, window.location.origin);
+            url.searchParams.set("challengeId", challengeIdOf(payload));
+            url.searchParams.set("returnTo", returnTo);
+            window.location.href = url.pathname + url.search;
+            return;
+          }
+          if (accessSessionIdOf(payload)) {
+            setSessionCookie(accessSessionIdOf(payload), returnTo);
+            window.location.href = returnTo;
+            return;
+          }
+          box.textContent = "Sign-in did not return a session.";
           box.classList.remove("d-none");
-          return;
+        } catch (_) {
+          box.textContent = "Unable to reach the account service. Restart the local server and try again.";
+          box.classList.remove("d-none");
         }
-        if (payload.twoFactorRequired && payload.challengeId) {
-          const url = new URL(challengePath, window.location.origin);
-          url.searchParams.set("challengeId", payload.challengeId);
-          url.searchParams.set("returnTo", returnTo);
-          window.location.href = url.pathname + url.search;
-          return;
-        }
-        if (payload.accessSessionId) {
-          setSessionCookie(payload.accessSessionId, returnTo);
-          window.location.href = returnTo;
-          return;
-        }
-        box.textContent = "Sign-in did not return a session.";
-        box.classList.remove("d-none");
       });
     })();
   </script>
