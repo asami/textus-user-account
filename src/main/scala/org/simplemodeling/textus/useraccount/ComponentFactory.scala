@@ -391,14 +391,14 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           email = email.map(Condition.is[String]).getOrElse(Condition.any[String]),
           loginName = loginName.map(Condition.is[String]).getOrElse(Condition.any[String]),
           externalSubjectId = Condition.any[String],
-          emailVerifiedAt = Condition.any[String],
+          emailVerifiedAt = Condition.any[Instant],
           phoneNumber = Condition.any[String],
           locale = Condition.any[String],
           timeZone = Condition.any[String],
-          phoneVerifiedAt = Condition.any[String],
-          lastLoginAt = Condition.any[String],
-          passwordChangedAt = Condition.any[String],
-          suspendedAt = Condition.any[String],
+          phoneVerifiedAt = Condition.any[Instant],
+          lastLoginAt = Condition.any[Instant],
+          passwordChangedAt = Condition.any[Instant],
+          suspendedAt = Condition.any[Instant],
           suspendedBy = Condition.any[String],
           suspensionReason = Condition.any[String],
           status = status.map(Condition.is[UserAccountStatus]).getOrElse(Condition.any[UserAccountStatus])
@@ -762,10 +762,10 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         userAccountId = Condition.is(userId),
         refreshSessionId = Condition.any[String],
         tokenHash = Condition.any[String],
-        issuedAt = Condition.any[String],
-        expiresAt = Condition.any[String],
-        revokedAt = Condition.any[String],
-        lastAccessedAt = Condition.any[String],
+        issuedAt = Condition.any[Instant],
+        expiresAt = Condition.any[Instant],
+        revokedAt = Condition.any[Instant],
+        lastAccessedAt = Condition.any[Instant],
         clientId = Condition.any[String],
         deviceInfo = Condition.any[String],
         ipAddress = Condition.any[String],
@@ -781,10 +781,10 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         userAccountId = Condition.is(userId),
         successorSessionId = Condition.any[String],
         tokenHash = Condition.any[String],
-        issuedAt = Condition.any[String],
-        expiresAt = Condition.any[String],
-        revokedAt = Condition.any[String],
-        rotatedAt = Condition.any[String],
+        issuedAt = Condition.any[Instant],
+        expiresAt = Condition.any[Instant],
+        revokedAt = Condition.any[Instant],
+        rotatedAt = Condition.any[Instant],
         clientId = Condition.any[String],
         deviceInfo = Condition.any[String],
         ipAddress = Condition.any[String],
@@ -1102,7 +1102,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
     private def revokeAccessSession(sessionId: EntityId): ExecUowM[Unit] =
       for
-        now <- exec_pure(Instant.now.toString)
+        now <- exec_pure(Instant.now)
         _ <- _update_access_session_fields_direct(
           sessionId,
           Record.dataAuto(
@@ -1115,7 +1115,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
     private def revokeRefreshSession(sessionId: EntityId): ExecUowM[Unit] =
       for
-        now <- exec_pure(Instant.now.toString)
+        now <- exec_pure(Instant.now)
         _ <- _update_refresh_session_fields_direct(
           sessionId,
           Record.dataAuto("revoked_at" -> now)
@@ -1125,7 +1125,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
     private def revokeRefreshSessionAsRotated(sessionId: EntityId): ExecUowM[Unit] =
       for
-        now <- exec_pure(Instant.now.toString)
+        now <- exec_pure(Instant.now)
         _ <- _update_refresh_session_fields_direct(
           sessionId,
           Record.dataAuto(
@@ -1179,7 +1179,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       for
         _ <- _update_user_account_fields_direct(
           userId,
-          Record.dataAuto("last_login_at" -> Instant.now.toString)
+          Record.dataAuto("last_login_at" -> Instant.now)
         )
       yield
         ()
@@ -1188,7 +1188,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       for
         _ <- _update_user_account_fields(
           userId,
-          Record.dataAuto("password_changed_at" -> Instant.now.toString)
+          Record.dataAuto("password_changed_at" -> Instant.now)
         )
       yield
         ()
@@ -1197,7 +1197,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       for
         _ <- _update_user_account_fields_direct(
           userId,
-          Record.dataAuto("email_verified_at" -> Instant.now.toString)
+          Record.dataAuto("email_verified_at" -> Instant.now)
         )
       yield
         ()
@@ -1208,7 +1208,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           userId,
           Record.dataAuto(
             "phone_number" -> phoneNumber,
-            "phone_verified_at" -> Instant.now.toString
+            "phone_verified_at" -> Instant.now
           )
         )
       yield
@@ -1690,7 +1690,7 @@ object ComponentFactory:
         UserAccountUpdate
           .Builder()
           .withStatus(status)
-          .withSuspendedAt(Instant.now.toString)
+          .withSuspendedAt(Instant.now)
           .withSuspendedBy(ctx.security.principal.id.value)
           .withSuspensionReason(suspensionReason.map(Update.set).getOrElse(Update.noop))
           .withResourceAttributes(
@@ -1859,8 +1859,8 @@ object ComponentFactory:
   private def _is_reused_refresh_session(session: RefreshSessionEntity): Boolean =
     !_is_expired(session.expiresAt) && session.rotatedAt.nonEmpty
 
-  private def _is_expired(expiresAt: String): Boolean =
-    scala.util.Try(Instant.parse(expiresAt)).toOption.exists(_.isBefore(Instant.now))
+  private def _is_expired(expiresAt: Instant): Boolean =
+    expiresAt.isBefore(Instant.now)
 
   private def _token_hash(token: String): String =
     val digest = MessageDigest.getInstance("SHA-256")
@@ -2132,7 +2132,7 @@ object ComponentFactory:
       session <- _load_access_session_by_id(sessionId)
       restored <-
         if (_is_active_access_session(session))
-          _touch_access_session(session.id).map(_ => session.copy(lastAccessedAt = Some(Instant.now.toString)))
+          _touch_access_session(session.id).map(_ => session.copy(lastAccessedAt = Some(Instant.now)))
         else if (_is_revoked_access_session(session))
           Consequence.failure("invalid session")
         else
@@ -2248,7 +2248,7 @@ object ComponentFactory:
   )(using ctx: ExecutionContext): Consequence[Unit] =
     _update_access_session_fields_direct(
       sessionId,
-      Record.dataAuto("last_accessed_at" -> Instant.now.toString)
+      Record.dataAuto("last_accessed_at" -> Instant.now)
     )
 
   private def _revoke_access_session_direct(
@@ -2257,8 +2257,8 @@ object ComponentFactory:
     _update_access_session_fields_direct(
       sessionId,
       Record.dataAuto(
-        "revoked_at" -> Instant.now.toString,
-        "last_accessed_at" -> Instant.now.toString
+        "revoked_at" -> Instant.now,
+        "last_accessed_at" -> Instant.now
       )
     )
 
@@ -2267,7 +2267,7 @@ object ComponentFactory:
   )(using ctx: ExecutionContext): Consequence[Unit] =
     _update_refresh_session_fields_direct(
       sessionId,
-      Record.dataAuto("revoked_at" -> Instant.now.toString)
+      Record.dataAuto("revoked_at" -> Instant.now)
     )
 
   private def _revoke_linked_refresh_session(
@@ -2516,8 +2516,8 @@ object ComponentFactory:
       timeZone.map("timeZone" -> _)
     ).flatten.toMap
 
-  private def _parse_instant(p: String): Option[Instant] =
-    scala.util.Try(Instant.parse(p)).toOption
+  private def _parse_instant(p: Instant): Option[Instant] =
+    Some(p)
 
   private def _verification_code(): String =
     f"${Random.nextInt(1000000)}%06d"

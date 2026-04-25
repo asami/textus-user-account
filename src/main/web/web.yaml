@@ -62,3 +62,45 @@ apps:
     path: /web/textus-user-account/two-factor/challenge
     root: /web/two-factor-challenge
     route: /web/textus-user-account/two-factor/challenge
+
+routes:
+  - path: /web/textus-user-account/signin
+    target:
+      component: textus-user-account
+      app: signin
+    kind: alias
+  - path: /web/textus-user-account/signup
+    target:
+      component: textus-user-account
+      app: signup
+    kind: alias
+  - path: /web/textus-user-account/password-reset
+    target:
+      component: textus-user-account
+      app: password-reset
+    kind: alias
+  - path: /web/textus-user-account/password-reset/sent
+    target:
+      component: textus-user-account
+      app: password-reset-sent
+    kind: alias
+  - path: /web/textus-user-account/password-reset/confirm
+    target:
+      component: textus-user-account
+      app: password-reset-confirm
+    kind: alias
+  - path: /web/textus-user-account/password-reset/success
+    target:
+      component: textus-user-account
+      app: password-reset-success
+    kind: alias
+  - path: /web/textus-user-account/two-factor
+    target:
+      component: textus-user-account
+      app: two-factor
+    kind: alias
+  - path: /web/textus-user-account/two-factor/challenge
+    target:
+      component: textus-user-account
+      app: two-factor-challenge
+    kind: alias

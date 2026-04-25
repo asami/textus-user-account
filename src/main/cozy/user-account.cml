@@ -399,6 +399,21 @@ If the registration input cannot be validated, the service rejects the request a
 
 #### provisionalRegistration
 
+##### TYPE
+
+COMMAND
+
+##### INPUT
+
+###### TYPE
+
+UserProvisionalRegistration
+
+##### OUTPUT
+
+###### TYPE
+
+UserProvisionalRegistrationResult
 ##### DESCRIPTION
 
 Creates a provisional account from minimum registration information.
@@ -432,6 +447,21 @@ Result of provisional account creation.
 
 #### register
 
+##### TYPE
+
+COMMAND
+
+##### INPUT
+
+###### TYPE
+
+UserRegister
+
+##### OUTPUT
+
+###### TYPE
+
+UserRegisterResult
 ##### DESCRIPTION
 
 Creates a regular user account through the standard registration flow.
@@ -465,6 +495,21 @@ Result of regular account creation.
 
 #### promoteToFormalRegistration
 
+##### TYPE
+
+COMMAND
+
+##### INPUT
+
+###### TYPE
+
+UserPromoteToFormalRegistration
+
+##### OUTPUT
+
+###### TYPE
+
+UserPromoteToFormalRegistrationResult
 ##### DESCRIPTION
 
 Promotes an existing provisional account into formal status.
@@ -493,6 +538,21 @@ Result of provisional-to-formal promotion.
 
 #### login
 
+##### TYPE
+
+COMMAND
+
+##### INPUT
+
+###### TYPE
+
+UserLogin
+
+##### OUTPUT
+
+###### TYPE
+
+UserLoginResult
 ##### DESCRIPTION
 
 Authenticates a user with identity and secret credentials.
@@ -526,6 +586,21 @@ Authentication result and runtime response payload.
 
 #### logout
 
+##### TYPE
+
+COMMAND
+
+##### INPUT
+
+###### TYPE
+
+UserLogout
+
+##### OUTPUT
+
+###### TYPE
+
+UserLogoutResult
 ##### DESCRIPTION
 
 Terminates the current session context for the user.
@@ -554,6 +629,21 @@ Logout execution result.
 
 #### logoutAll
 
+##### TYPE
+
+COMMAND
+
+##### INPUT
+
+###### TYPE
+
+UserLogoutAll
+
+##### OUTPUT
+
+###### TYPE
+
+UserLogoutResult
 ##### DESCRIPTION
 
 Terminates all active session contexts for the user.
@@ -586,6 +676,21 @@ Logout execution result.
 
 #### refreshAccessToken
 
+##### TYPE
+
+COMMAND
+
+##### INPUT
+
+###### TYPE
+
+UserRefreshAccessToken
+
+##### OUTPUT
+
+###### TYPE
+
+UserLoginResult
 ##### DESCRIPTION
 
 Rotates the current refresh token and issues a new access token.
@@ -619,6 +724,21 @@ New access token and refresh token pair.
 
 #### changePassword
 
+##### TYPE
+
+COMMAND
+
+##### INPUT
+
+###### TYPE
+
+UserChangePassword
+
+##### OUTPUT
+
+###### TYPE
+
+UserChangePasswordResult
 ##### DESCRIPTION
 
 Replaces the current password with a new password.
@@ -655,6 +775,21 @@ Credential update result.
 
 #### verifyMyEmail
 
+##### TYPE
+
+COMMAND
+
+##### INPUT
+
+###### TYPE
+
+UserVerifyMyEmail
+
+##### OUTPUT
+
+###### TYPE
+
+UserVerifyMyEmailResult
 ##### DESCRIPTION
 
 Marks the current account email as verified after successful proof validation.
@@ -691,6 +826,21 @@ Email verification result.
 
 #### verifyMyPhone
 
+##### TYPE
+
+COMMAND
+
+##### INPUT
+
+###### TYPE
+
+UserVerifyMyPhone
+
+##### OUTPUT
+
+###### TYPE
+
+UserVerifyMyPhoneResult
 ##### DESCRIPTION
 
 Registers or confirms the current account SMS contact and records phone verification time.
@@ -727,6 +877,21 @@ Phone verification result.
 
 #### requestPasswordReset
 
+##### TYPE
+
+COMMAND
+
+##### INPUT
+
+###### TYPE
+
+UserRequestPasswordReset
+
+##### OUTPUT
+
+###### TYPE
+
+UserChangePasswordResult
 ##### DESCRIPTION
 Requests a password-reset notification for the supplied email address.
 
@@ -754,6 +919,21 @@ Generic acceptance result.
 
 #### confirmPasswordReset
 
+##### TYPE
+
+COMMAND
+
+##### INPUT
+
+###### TYPE
+
+UserConfirmPasswordReset
+
+##### OUTPUT
+
+###### TYPE
+
+UserChangePasswordResult
 ##### DESCRIPTION
 Confirms a password reset using the issued reset token and a new password.
 
@@ -781,6 +961,21 @@ Password-reset completion result.
 
 #### enrollTwoFactor
 
+##### TYPE
+
+COMMAND
+
+##### INPUT
+
+###### TYPE
+
+UserEnrollTwoFactor
+
+##### OUTPUT
+
+###### TYPE
+
+UserVerifyMyEmailResult
 ##### DESCRIPTION
 Enables optional email-based two-factor authentication for the current account.
 
@@ -812,6 +1007,21 @@ Two-factor enrollment result.
 
 #### verifyTwoFactorLogin
 
+##### TYPE
+
+COMMAND
+
+##### INPUT
+
+###### TYPE
+
+UserVerifyTwoFactorLogin
+
+##### OUTPUT
+
+###### TYPE
+
+UserLoginResult
 ##### DESCRIPTION
 Completes a pending login challenge using the issued verification code.
 
@@ -839,6 +1049,21 @@ Authenticated login result.
 
 #### getMyAccount
 
+##### TYPE
+
+QUERY
+
+##### INPUT
+
+###### TYPE
+
+UserGetMyAccount
+
+##### OUTPUT
+
+###### TYPE
+
+UserAccountResult
 ##### DESCRIPTION
 
 Returns the current account projection for the requesting user.
@@ -871,6 +1096,21 @@ Current account projection.
 
 #### lookupUserByLoginName
 
+##### TYPE
+
+QUERY
+
+##### INPUT
+
+###### TYPE
+
+UserLookupByLoginName
+
+##### OUTPUT
+
+###### TYPE
+
+UserAccountResult
 ##### DESCRIPTION
 
 Resolves an active account by `loginName` for authenticated account-identity lookup.
@@ -959,6 +1199,21 @@ Operators can provision, inspect, control, and delete accounts under explicit go
 
 #### createUserAccount
 
+##### TYPE
+
+COMMAND
+
+##### INPUT
+
+###### TYPE
+
+AdminCreateUserAccount
+
+##### OUTPUT
+
+###### TYPE
+
+AdminCreateUserAccountResult
 ##### DESCRIPTION
 
 Creates a user account from the management console context.
@@ -985,6 +1240,21 @@ Provisioning result.
 
 #### updateUserStatus
 
+##### TYPE
+
+COMMAND
+
+##### INPUT
+
+###### TYPE
+
+AdminUpdateUserStatus
+
+##### OUTPUT
+
+###### TYPE
+
+AdminUpdateUserStatusResult
 ##### DESCRIPTION
 
 Updates the operational status of a target account.
@@ -1011,6 +1281,21 @@ Status update result.
 
 #### deleteUserAccount
 
+##### TYPE
+
+COMMAND
+
+##### INPUT
+
+###### TYPE
+
+AdminDeleteUserAccount
+
+##### OUTPUT
+
+###### TYPE
+
+AdminDeleteUserAccountResult
 ##### DESCRIPTION
 
 Deletes a target user account under administrative control.
@@ -1037,6 +1322,21 @@ Deletion result.
 
 #### listUserAccounts
 
+##### TYPE
+
+QUERY
+
+##### INPUT
+
+###### TYPE
+
+AdminListUserAccounts
+
+##### OUTPUT
+
+###### TYPE
+
+AdminListUserAccountsResult
 ##### DESCRIPTION
 
 Lists user accounts with optional filters and pagination.
@@ -1090,14 +1390,14 @@ Core user profile and operational account state.
 | email             | string    | 1            |             |
 | loginName         | string    | ?            |             |
 | externalSubjectId | string    | ?            |             |
-| emailVerifiedAt   | date-time | ?            |             |
+| emailVerifiedAt   | instant | ?            |             |
 | phoneNumber       | string    | ?            | phone       |
 | locale            | string    | ?            |             |
 | timeZone          | string    | ?            |             |
-| phoneVerifiedAt   | date-time | ?            |             |
-| lastLoginAt       | date-time | ?            |             |
-| passwordChangedAt | date-time | ?            |             |
-| suspendedAt       | date-time | ?            |             |
+| phoneVerifiedAt   | instant | ?            |             |
+| lastLoginAt       | instant | ?            |             |
+| passwordChangedAt | instant | ?            |             |
+| suspendedAt       | instant | ?            |             |
 | suspendedBy       | string    | ?            |             |
 | suspensionReason  | string    | ?            |             |
 
@@ -1212,10 +1512,10 @@ Issued access-session token state owned by a user account.
 | userAccountId    | entityid  | 1            |
 | refreshSessionId | string    | ?            |
 | tokenHash        | string    | 1            |
-| issuedAt         | date-time | 1            |
-| expiresAt        | date-time | 1            |
-| revokedAt        | date-time | ?            |
-| lastAccessedAt   | date-time | ?            |
+| issuedAt         | instant | 1            |
+| expiresAt        | instant | 1            |
+| revokedAt        | instant | ?            |
+| lastAccessedAt   | instant | ?            |
 | clientId         | string    | ?            |
 | deviceInfo       | string    | ?            |
 | ipAddress        | string    | ?            |
@@ -1238,10 +1538,10 @@ Refresh-session token state owned by a user account.
 | userAccountId      | entityid  | 1            |
 | successorSessionId | string    | ?            |
 | tokenHash          | string    | 1            |
-| issuedAt           | date-time | 1            |
-| expiresAt          | date-time | 1            |
-| revokedAt          | date-time | ?            |
-| rotatedAt          | date-time | ?            |
+| issuedAt           | instant | 1            |
+| expiresAt          | instant | 1            |
+| revokedAt          | instant | ?            |
+| rotatedAt          | instant | ?            |
 | clientId           | string    | ?            |
 | deviceInfo         | string    | ?            |
 | ipAddress          | string    | ?            |
@@ -1465,260 +1765,6 @@ Administrative query to list accounts with optional filters.
 | email   | string | ?            |
 | offset  | int    | ?            |
 | limit   | int    | ?            |
-
-# OPERATION
-
-## provisionalRegistration
-
-### TYPE
-COMMAND
-
-### INPUT
-UserProvisionalRegistration
-
-### OUTPUT
-UserProvisionalRegistrationResult
-
-## register
-
-### TYPE
-COMMAND
-
-### INPUT
-UserRegister
-
-### OUTPUT
-UserRegisterResult
-
-## promoteToFormalRegistration
-
-### TYPE
-COMMAND
-
-### INPUT
-UserPromoteToFormalRegistration
-
-### OUTPUT
-UserPromoteToFormalRegistrationResult
-
-## login
-
-### TYPE
-COMMAND
-
-### INPUT
-UserLogin
-
-### OUTPUT
-UserLoginResult
-
-## logout
-
-### TYPE
-COMMAND
-
-### INPUT
-UserLogout
-
-### OUTPUT
-UserLogoutResult
-
-## logoutAll
-
-### TYPE
-COMMAND
-
-### INPUT
-UserLogoutAll
-
-### OUTPUT
-UserLogoutResult
-
-## changePassword
-
-### TYPE
-COMMAND
-
-### INPUT
-UserChangePassword
-
-### OUTPUT
-UserChangePasswordResult
-
-## refreshAccessToken
-
-### TYPE
-COMMAND
-
-### SUMMARY
-Rotate the current refresh token and issue a new token pair.
-
-### DESCRIPTION
-Accept an anonymous refresh-token request, issue a new access/refresh pair for an active session, and reject reuse of an already-rotated refresh token.
-
-### INPUT
-UserRefreshAccessToken
-
-### OUTPUT
-UserLoginResult
-
-## verifyMyEmail
-
-### TYPE
-COMMAND
-
-### SUMMARY
-Verify the current account email address.
-
-### INPUT
-
-#### SUMMARY
-Email verification request for the current account.
-
-#### TYPE
-UserVerifyMyEmail
-
-### OUTPUT
-
-#### SUMMARY
-Email verification completion result.
-
-#### TYPE
-UserVerifyMyEmailResult
-
-## verifyMyPhone
-
-### TYPE
-COMMAND
-
-### SUMMARY
-Verify the current account SMS contact.
-
-### INPUT
-
-#### SUMMARY
-Phone verification request for the current account.
-
-#### TYPE
-UserVerifyMyPhone
-
-### OUTPUT
-
-#### SUMMARY
-Phone verification completion result.
-
-#### TYPE
-UserVerifyMyPhoneResult
-
-## requestPasswordReset
-
-### TYPE
-COMMAND
-
-### INPUT
-UserRequestPasswordReset
-
-### OUTPUT
-UserChangePasswordResult
-
-## confirmPasswordReset
-
-### TYPE
-COMMAND
-
-### INPUT
-UserConfirmPasswordReset
-
-### OUTPUT
-UserChangePasswordResult
-
-## enrollTwoFactor
-
-### TYPE
-COMMAND
-
-### INPUT
-UserEnrollTwoFactor
-
-### OUTPUT
-UserVerifyMyEmailResult
-
-## verifyTwoFactorLogin
-
-### TYPE
-COMMAND
-
-### INPUT
-UserVerifyTwoFactorLogin
-
-### OUTPUT
-UserLoginResult
-
-## getMyAccount
-
-### TYPE
-QUERY
-
-### INPUT
-UserGetMyAccount
-
-### OUTPUT
-UserAccountResult
-
-## lookupUserByLoginName
-
-### TYPE
-QUERY
-
-### INPUT
-UserLookupByLoginName
-
-### OUTPUT
-UserAccountResult
-
-## createUserAccount
-
-### TYPE
-COMMAND
-
-### INPUT
-AdminCreateUserAccount
-
-### OUTPUT
-AdminCreateUserAccountResult
-
-## updateUserStatus
-
-### TYPE
-COMMAND
-
-### INPUT
-AdminUpdateUserStatus
-
-### OUTPUT
-AdminUpdateUserStatusResult
-
-## deleteUserAccount
-
-### TYPE
-COMMAND
-
-### INPUT
-AdminDeleteUserAccount
-
-### OUTPUT
-AdminDeleteUserAccountResult
-
-## listUserAccounts
-
-### TYPE
-QUERY
-
-### INPUT
-AdminListUserAccounts
-
-### OUTPUT
-AdminListUserAccountsResult
 
 # Scenario
 
