@@ -44,6 +44,16 @@
                   <input class="form-control" id="phoneNumber" name="phoneNumber" type="tel" autocomplete="tel">
                   <div class="form-text">Optional SMS/security contact for generic account management.</div>
                 </div>
+                <div class="col-12 col-md-6" data-textus-field="locale">
+                  <label class="form-label" for="locale">Locale</label>
+                  <input class="form-control" id="locale" name="locale" placeholder="ja-JP" autocomplete="language">
+                  <div class="form-text">Optional BCP 47 locale for account-owned display formatting.</div>
+                </div>
+                <div class="col-12 col-md-6" data-textus-field="timeZone">
+                  <label class="form-label" for="timeZone">Time zone</label>
+                  <input class="form-control" id="timeZone" name="timeZone" placeholder="Asia/Tokyo">
+                  <div class="form-text">Optional IANA time zone used for date and time display.</div>
+                </div>
                 <div class="col-12" data-textus-field="password">
                   <label class="form-label" for="password">Password</label>
                   <input class="form-control" id="password" name="password" type="password" autocomplete="new-password" required>

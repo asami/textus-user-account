@@ -21,7 +21,7 @@ import org.goldenport.cncf.CncfVersion
 import org.goldenport.cncf.context.{Capability, ExecutionContext, PrincipalId, SecurityLevel, SessionContext, SubjectKind}
 import org.goldenport.cncf.datastore.{Query as DsQuery, QueryDirective as DsQueryDirective}
 import org.goldenport.cncf.directive.Query
-import org.goldenport.cncf.entity.EntityStore
+import org.goldenport.cncf.entity.{EntityQuery, EntityStore}
 import org.goldenport.cncf.entity.runtime.{EntityMemoryPolicy, EntityRuntimePlan, PartitionStrategy, WorkingSetDefinition}
 import org.goldenport.cncf.operation.CmlOperationAccess
 import org.goldenport.cncf.messagedelivery.{DeliveryChannel, UnifiedMessage, MessageDeliveryProviderRuntime}
@@ -39,10 +39,11 @@ import org.simplemodeling.textus.useraccount.entity.update.{AccessSession => Acc
 /*
  * @since   Mar. 23, 2026
  *  version Mar. 24, 2026
- * @version Apr. 23, 2026
+ * @version Apr. 25, 2026
  * @author  ASAMI, Tomoharu
  */
 class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePlanProvider:
+  import UserAccountComponent.AggregateService
   import UserAccountComponent.ManagementService
   import UserAccountComponent.UserService
 
@@ -73,6 +74,65 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     uow: org.goldenport.cncf.unitofwork.UnitOfWork
   ): Option[Consequence[Unit]] =
     None
+
+  override val aggregate: UserAccountComponent.AggregateServiceFactory =
+    new UserAccountAggregateServiceFactory
+
+  private final class UserAccountAggregateServiceFactory extends UserAccountComponent.AggregateServiceFactory:
+    import AggregateService.*
+
+    override def createLoadUserAccountActionCall(
+      core: ActionCall.Core,
+      action: LoadUserAccountQuery
+    ): LoadUserAccountActionCall =
+      LoadUserAccountAggregateActionCallImpl(core, action)
+
+  private final case class LoadUserAccountAggregateActionCallImpl(
+    core: ActionCall.Core,
+    override val action: AggregateService.LoadUserAccountQuery
+  ) extends AggregateService.LoadUserAccountActionCall, UserAccountActionSupport:
+    protected def build_Program: ExecUowM[OperationResponse] =
+      val internalCtx = ExecutionContext.withAggregateInternalRead(executionContext, true)
+      val memberQuery = Query(Record.data("userAccountId" -> action.id.value))
+      for
+        account <- exec_from(
+          EntityStore
+            .standard()
+            .load[UserAccountEntity](action.id)(using summon, internalCtx)
+            .flatMap(x => Consequence.successOrEntityNotFound(x)(action.id))
+        )
+        profiles <- exec_from(
+          EntityStore
+            .standard()
+            .search[UserProfileEntity](EntityQuery(UserProfileEntity.collectionId, memberQuery))(using summon, internalCtx)
+        )
+        credentials <- exec_from(
+          EntityStore
+            .standard()
+            .search[CredentialEntity](EntityQuery(CredentialEntity.collectionId, memberQuery))(using summon, internalCtx)
+        )
+        accessSessions <- exec_from(
+          EntityStore
+            .standard()
+            .search[AccessSessionEntity](EntityQuery(AccessSessionEntity.collectionId, memberQuery))(using summon, internalCtx)
+        )
+        refreshSessions <- exec_from(
+          EntityStore
+            .standard()
+            .search[RefreshSessionEntity](EntityQuery(RefreshSessionEntity.collectionId, memberQuery))(using summon, internalCtx)
+        )
+      yield
+        OperationResponse.RecordResponse(
+          account.toRecord() ++ Record.dataAuto(
+            "userProfile" -> profiles.data.map(_.toRecord()),
+            "user_profile" -> profiles.data.map(_.toRecord()),
+            "credential" -> credentials.data.map(_.toRecord()),
+            "accessSession" -> accessSessions.data.map(_.toRecord()),
+            "access_session" -> accessSessions.data.map(_.toRecord()),
+            "refreshSession" -> refreshSessions.data.map(_.toRecord()),
+            "refresh_session" -> refreshSessions.data.map(_.toRecord())
+          )
+        )
 
   override protected def create_Component(params: ComponentCreate): Component =
     new UserAccountComponent() {
@@ -333,6 +393,8 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           externalSubjectId = Condition.any[String],
           emailVerifiedAt = Condition.any[String],
           phoneNumber = Condition.any[String],
+          locale = Condition.any[String],
+          timeZone = Condition.any[String],
           phoneVerifiedAt = Condition.any[String],
           lastLoginAt = Condition.any[String],
           passwordChangedAt = Condition.any[String],
@@ -2342,6 +2404,8 @@ object ComponentFactory:
         "email" -> user.email,
         "login_name" -> user.loginName.orNull,
         "handle" -> user.loginName.orNull,
+        "locale" -> user.locale.orNull,
+        "timeZone" -> user.timeZone.orNull,
         "shortid" -> user.id.parts.entropy,
         "access_token" -> accessToken
       ).collect { case (k, v) if v != null && v.nonEmpty => k -> v },
@@ -2356,7 +2420,7 @@ object ComponentFactory:
           authenticatedAt = _parse_instant(session.issuedAt),
           expiresAt = _parse_instant(session.expiresAt),
           refreshSessionId = session.refreshSessionId,
-          attributes = _session_attributes(session.clientId, session.deviceInfo, session.ipAddress, session.userAgent)
+          attributes = _session_attributes(session.clientId, session.deviceInfo, session.ipAddress, session.userAgent) ++ _session_display_attributes(user.locale, user.timeZone)
         )
       )
     )
@@ -2375,6 +2439,8 @@ object ComponentFactory:
         "email" -> user.email,
         "login_name" -> user.loginName.orNull,
         "handle" -> user.loginName.orNull,
+        "locale" -> user.locale.orNull,
+        "timeZone" -> user.timeZone.orNull,
         "shortid" -> user.id.parts.entropy,
         "refresh_token" -> refreshToken
       ).collect { case (k, v) if v != null && v.nonEmpty => k -> v },
@@ -2389,7 +2455,7 @@ object ComponentFactory:
           authenticatedAt = _parse_instant(session.issuedAt),
           expiresAt = _parse_instant(session.expiresAt),
           refreshSessionId = Some(session.id.print),
-          attributes = _session_attributes(session.clientId, session.deviceInfo, session.ipAddress, session.userAgent)
+          attributes = _session_attributes(session.clientId, session.deviceInfo, session.ipAddress, session.userAgent) ++ _session_display_attributes(user.locale, user.timeZone)
         )
       )
     )
@@ -2408,6 +2474,8 @@ object ComponentFactory:
         "email" -> user.email,
         "login_name" -> user.loginName.orNull,
         "handle" -> user.loginName.orNull,
+        "locale" -> user.locale.orNull,
+        "timeZone" -> user.timeZone.orNull,
         "shortid" -> user.id.parts.entropy
       ).collect { case (k, v) if v != null && v.nonEmpty => k -> v },
       capabilities = Set(Capability("user")),
@@ -2421,7 +2489,7 @@ object ComponentFactory:
           authenticatedAt = _parse_instant(session.issuedAt),
           expiresAt = _parse_instant(session.expiresAt),
           refreshSessionId = session.refreshSessionId,
-          attributes = _session_attributes(session.clientId, session.deviceInfo, session.ipAddress, session.userAgent)
+          attributes = _session_attributes(session.clientId, session.deviceInfo, session.ipAddress, session.userAgent) ++ _session_display_attributes(user.locale, user.timeZone)
         )
       )
     )
@@ -2437,6 +2505,15 @@ object ComponentFactory:
       deviceInfo.map("device_info" -> _),
       ipAddress.map("ip_address" -> _),
       userAgent.map("user_agent" -> _)
+    ).flatten.toMap
+
+  private def _session_display_attributes(
+    locale: Option[String],
+    timeZone: Option[String]
+  ): Map[String, String] =
+    Vector(
+      locale.map("locale" -> _),
+      timeZone.map("timeZone" -> _)
     ).flatten.toMap
 
   private def _parse_instant(p: String): Option[Instant] =

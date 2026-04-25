@@ -31,7 +31,7 @@ import java.security.MessageDigest
 
 /*
  * @since   Apr.  7, 2026
- * @version Apr. 23, 2026
+ * @version Apr. 25, 2026
  * @author  ASAMI, Tomoharu
  */
 final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
@@ -246,7 +246,9 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
             Property("title", "member", None),
             Property("loginName", "alice", None),
             Property("email", "alice@example.com", None),
-            Property("password", "secret", None)
+            Property("password", "secret", None),
+            Property("locale", "ja-JP", None),
+            Property("timeZone", "Asia/Tokyo", None)
           )
         )
       )
@@ -265,6 +267,8 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val response = lookedUp.toOption.get.asInstanceOf[RecordResponse].record
       response.getString("login_name").orElse(response.getString("loginName")) shouldBe Some("alice")
       response.getString("email") shouldBe Some("alice@example.com")
+      response.getString("locale") shouldBe Some("ja-JP")
+      response.getString("time_zone").orElse(response.getString("timeZone")) shouldBe Some("Asia/Tokyo")
     }
 
     "reject loginName lookup for suspended accounts" in {
@@ -550,7 +554,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val component = _component()
       given ExecutionContext = fixture.executionContext
       val userId = _user_account_id("provider_login")
-      _seed_user_account(userId, "provider_owner", "provider-login@example.com").toOption.isDefined shouldBe true
+      _seed_user_account(userId, "provider_owner", "provider-login@example.com", locale = Some("ja-JP"), timeZone = Some("Asia/Tokyo")).toOption.isDefined shouldBe true
       _seed_credential(userId, "provider_owner", "secret").toOption.isDefined shouldBe true
 
       val provider = component.authenticationProviders.head
@@ -562,12 +566,18 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val authenticated = login.toOption.flatten.get
       val sessionId = authenticated.session.flatMap(_.sessionId).getOrElse(fail("session id missing"))
       authenticated.attributes.get("access_token") shouldBe empty
+      authenticated.attributes.get("locale") shouldBe Some("ja-JP")
+      authenticated.attributes.get("timeZone") shouldBe Some("Asia/Tokyo")
+      authenticated.session.flatMap(_.attributes.get("locale")) shouldBe Some("ja-JP")
+      authenticated.session.flatMap(_.attributes.get("timeZone")) shouldBe Some("Asia/Tokyo")
 
       val restored = provider.authenticate(AuthenticationRequest(Map(
         "x-textus-session" -> sessionId
       )))
       restored.toOption.flatten should not be empty
       restored.toOption.flatten.get.principalId.value shouldBe userId.print
+      restored.toOption.flatten.get.attributes.get("locale") shouldBe Some("ja-JP")
+      restored.toOption.flatten.get.attributes.get("timeZone") shouldBe Some("Asia/Tokyo")
       restored.toOption.flatten.get.session.flatMap(_.sessionId) shouldBe Some(sessionId)
     }
 
@@ -614,7 +624,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
 
       provider.authenticate(AuthenticationRequest(Map(
         "x-textus-session" -> sessionId
-      ))).toOption.isDefined shouldBe false
+      ))).toOption.flatten.isDefined shouldBe false
     }
 
     "treat invalid provider session deterministically without throwing" in {
@@ -1396,7 +1406,9 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
     status: UserAccountStatus = UserAccountStatus.Registered,
     emailVerifiedAt: Option[String] = None,
     phoneNumber: Option[String] = None,
-    phoneVerifiedAt: Option[String] = None
+    phoneVerifiedAt: Option[String] = None,
+    locale: Option[String] = None,
+    timeZone: Option[String] = None
   )(using ExecutionContext) = {
     val principal = ObjectId(Identifier(ownerPrincipalId))
     val rights = SecurityAttributes.Rights(
@@ -1427,6 +1439,8 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       externalSubjectId = None,
       emailVerifiedAt = emailVerifiedAt,
       phoneNumber = phoneNumber,
+      locale = locale,
+      timeZone = timeZone,
       phoneVerifiedAt = phoneVerifiedAt,
       lastLoginAt = None,
       passwordChangedAt = None,

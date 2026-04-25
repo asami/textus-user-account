@@ -30,7 +30,7 @@ import org.simplemodeling.textus.useraccount.entity.create.UserAccount.given
 
 /*
  * @since   Apr.  6, 2026
- * @version Apr.  9, 2026
+ * @version Apr. 25, 2026
  * @author  ASAMI, Tomoharu
  */
 final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
@@ -119,6 +119,8 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
         externalSubjectId = Condition.any[String],
         emailVerifiedAt = Condition.any[String],
         phoneNumber = Condition.any[String],
+        locale = Condition.any[String],
+        timeZone = Condition.any[String],
         phoneVerifiedAt = Condition.any[String],
         lastLoginAt = Condition.any[String],
         passwordChangedAt = Condition.any[String],
@@ -529,6 +531,8 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
       externalSubjectId = None,
       emailVerifiedAt = None,
       phoneNumber = None,
+      locale = None,
+      timeZone = None,
       phoneVerifiedAt = None,
       lastLoginAt = None,
       passwordChangedAt = None,

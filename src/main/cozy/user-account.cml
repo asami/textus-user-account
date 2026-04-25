@@ -1092,6 +1092,8 @@ Core user profile and operational account state.
 | externalSubjectId | string    | ?            |             |
 | emailVerifiedAt   | date-time | ?            |             |
 | phoneNumber       | string    | ?            | phone       |
+| locale            | string    | ?            |             |
+| timeZone          | string    | ?            |             |
 | phoneVerifiedAt   | date-time | ?            |             |
 | lastLoginAt       | date-time | ?            |             |
 | passwordChangedAt | date-time | ?            |             |
@@ -1275,6 +1277,8 @@ Command to create a regular account in the standard user registration flow.
 | loginName | string | 1            |
 | identifier | string | 1            |
 | password   | string | 1            |
+| locale     | string | ?            |
+| timeZone   | string | ?            |
 
 ## UserPromoteToFormalRegistration
 
