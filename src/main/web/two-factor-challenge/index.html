@@ -55,7 +55,7 @@
         event.preventDefault();
         error.classList.add('d-none');
         try {
-          const response = await fetch('/form-api/textus-user-account/user/verify-two-factor-login', {
+          const response = await fetch('/form-api/user-account/user/verify-two-factor-login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams(new FormData(form)),

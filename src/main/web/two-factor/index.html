@@ -37,7 +37,7 @@
         error.classList.add('d-none');
         success.classList.add('d-none');
         try {
-          const response = await fetch('/form-api/textus-user-account/user/enroll-two-factor', {
+          const response = await fetch('/form-api/user-account/user/enroll-two-factor', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams(),

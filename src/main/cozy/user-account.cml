@@ -1575,7 +1575,7 @@ Command to create a regular account in the standard user registration flow.
 | name      | name   | 1            |
 | title     | string | 1            |
 | loginName | string | 1            |
-| identifier | string | 1            |
+| identifier | string | ?            |
 | password   | string | 1            |
 | locale     | string | ?            |
 | timeZone   | string | ?            |
@@ -1603,8 +1603,21 @@ Authentication command for user sign-in.
 
 | name      | type   | multiplicity |
 |-----------+--------+--------------|
-| identifier | string | 1            |
+| identifier | string | ?            |
 | password   | string | 1            |
+
+## UserVerifyTwoFactorLogin
+
+### DESCRIPTION
+
+Command to complete a pending two-factor login challenge.
+
+### ATTRIBUTE
+
+| name        | type   | multiplicity |
+|-------------+--------+--------------|
+| challengeId | string | 1            |
+| code        | string | 1            |
 
 ## UserLogout
 
@@ -1616,7 +1629,7 @@ Command to terminate current user session context.
 
 | name          | type     | multiplicity |
 |---------------+----------+--------------|
-| userAccountId | entityid | 1            |
+| userAccountId | entityid | ?            |
 
 ## UserLogoutAll
 
@@ -1628,7 +1641,7 @@ Command to terminate all user sessions for an account.
 
 | name          | type     | multiplicity |
 |---------------+----------+--------------|
-| userAccountId | entityid | 1            |
+| userAccountId | entityid | ?            |
 
 ## UserChangePassword
 
@@ -1640,7 +1653,7 @@ Command to replace an existing password with a new one.
 
 | name             | type     | multiplicity |
 |------------------+----------+--------------|
-| userAccountId    | entityid | 1            |
+| userAccountId    | entityid | ?            |
 | currentPassword  | string   | 1            |
 | newPassword      | string   | 1            |
 
@@ -1666,7 +1679,7 @@ Command to confirm the current account email address.
 
 | name          | type     | multiplicity |
 |---------------+----------+--------------|
-| userAccountId | entityid | 1            |
+| userAccountId | entityid | ?            |
 | proofToken    | string   | 1            |
 
 ## UserVerifyMyPhone
@@ -1679,7 +1692,7 @@ Command to confirm the current account SMS contact.
 
 | name          | type     | multiplicity |
 |---------------+----------+--------------|
-| userAccountId | entityid | 1            |
+| userAccountId | entityid | ?            |
 | phoneNumber   | string   | 1            |
 | proofToken    | string   | 1            |
 
@@ -1737,7 +1750,7 @@ Query to obtain account data for the current user.
 
 | name          | type     | multiplicity |
 |---------------+----------+--------------|
-| userAccountId | entityid | 1            |
+| userAccountId | entityid | ?            |
 
 ## UserLookupByLoginName
 

@@ -30,10 +30,21 @@ import org.simplemodeling.textus.useraccount.entity.create.UserAccount.given
 
 /*
  * @since   Apr.  6, 2026
- * @version Apr. 25, 2026
+ *  version Apr. 25, 2026
+ * @version May.  1, 2026
  * @author  ASAMI, Tomoharu
  */
 final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
+  private def _lifecycle_attributes: LifecycleAttributes =
+    LifecycleAttributes(
+      java.time.Instant.EPOCH,
+      java.time.Instant.EPOCH,
+      Identifier("system"),
+      Identifier("system"),
+      org.simplemodeling.model.statemachine.PostStatus.default,
+      org.simplemodeling.model.statemachine.Aliveness.default
+    )
+
   "ComponentFactory status policy" should {
     "parse declared states" in {
       ComponentFactory.parseStatus("provisional").toOption shouldBe Some(UserAccountStatus.Provisional)
@@ -117,14 +128,14 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
         email = Condition.any[String],
         loginName = Condition.any[String],
         externalSubjectId = Condition.any[String],
-        emailVerifiedAt = Condition.any[String],
+        emailVerifiedAt = Condition.any[java.time.Instant],
         phoneNumber = Condition.any[String],
         locale = Condition.any[String],
         timeZone = Condition.any[String],
-        phoneVerifiedAt = Condition.any[String],
-        lastLoginAt = Condition.any[String],
-        passwordChangedAt = Condition.any[String],
-        suspendedAt = Condition.any[String],
+        phoneVerifiedAt = Condition.any[java.time.Instant],
+        lastLoginAt = Condition.any[java.time.Instant],
+        passwordChangedAt = Condition.any[java.time.Instant],
+        suspendedAt = Condition.any[java.time.Instant],
         suspendedBy = Condition.any[String],
         suspensionReason = Condition.any[String],
         status = Condition.any[UserAccountStatus]
@@ -512,14 +523,7 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
       id = Some(id),
       nameAttributes = NameAttributes.simple(Name("owner")),
       descriptiveAttributes = DescriptiveAttributes.empty,
-      lifecycleAttributes = LifecycleAttributes(
-        java.time.ZonedDateTime.of(1970, 1, 1, 0, 0, 0, 0, java.time.ZoneOffset.UTC),
-        None,
-        Identifier("system"),
-        None,
-        org.simplemodeling.model.statemachine.PostStatus.default,
-        org.simplemodeling.model.statemachine.Aliveness.default
-      ),
+      lifecycleAttributes = _lifecycle_attributes,
       publicationAttributes = PublicationAttributes(None, None, None, None, None),
       securityAttributes = SecurityAttributes(principal, principal, rights, principal),
       resourceAttributes = ResourceAttributes(),

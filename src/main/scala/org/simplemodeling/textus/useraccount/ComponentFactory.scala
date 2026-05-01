@@ -10,7 +10,7 @@ import scala.util.Random
 import cats.syntax.all.*
 import org.goldenport.Consequence
 import org.goldenport.datatype.Name
-import org.simplemodeling.model.datatype.EntityId
+import org.simplemodeling.model.datatype.{EntityCollectionId, EntityId}
 import org.goldenport.protocol.operation.OperationResponse
 import org.goldenport.protocol.operation.OperationResponse.RecordResponse
 import org.goldenport.record.Record
@@ -39,7 +39,8 @@ import org.simplemodeling.textus.useraccount.entity.update.{AccessSession => Acc
 /*
  * @since   Mar. 23, 2026
  *  version Mar. 24, 2026
- * @version Apr. 25, 2026
+ *  version Apr. 25, 2026
+ * @version May.  1, 2026
  * @author  ASAMI, Tomoharu
  */
 class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePlanProvider:
@@ -200,122 +201,122 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
   override val User: UserAccountComponent.UserServiceFactory = new UserAccountComponent.UserServiceFactory:
     override def createProvisionalRegistrationActionCall(
       core: ActionCall.Core,
-      action: UserService.ProvisionalRegistrationCommand
+      action: UserService.UserProvisionalRegistration
     ): UserService.ProvisionalRegistrationActionCall =
       ProvisionalRegistrationActionCallImpl(core, action)
 
     override def createRegisterActionCall(
       core: ActionCall.Core,
-      action: UserService.RegisterCommand
+      action: UserService.UserRegister
     ): UserService.RegisterActionCall =
       RegisterActionCallImpl(core, action)
 
     override def createPromoteToFormalRegistrationActionCall(
       core: ActionCall.Core,
-      action: UserService.PromoteToFormalRegistrationCommand
+      action: UserService.UserPromoteToFormalRegistration
     ): UserService.PromoteToFormalRegistrationActionCall =
       PromoteToFormalRegistrationActionCallImpl(core, action)
 
     override def createLoginActionCall(
       core: ActionCall.Core,
-      action: UserService.LoginCommand
+      action: UserService.UserLogin
     ): UserService.LoginActionCall =
       LoginActionCallImpl(core, action)
 
     override def createLogoutActionCall(
       core: ActionCall.Core,
-      action: UserService.LogoutCommand
+      action: UserService.UserLogout
     ): UserService.LogoutActionCall =
       LogoutActionCallImpl(core, action)
 
     override def createLogoutAllActionCall(
       core: ActionCall.Core,
-      action: UserService.LogoutAllCommand
+      action: UserService.UserLogoutAll
     ): UserService.LogoutAllActionCall =
       LogoutAllActionCallImpl(core, action)
 
     override def createRefreshAccessTokenActionCall(
       core: ActionCall.Core,
-      action: UserService.RefreshAccessTokenCommand
+      action: UserService.UserRefreshAccessToken
     ): UserService.RefreshAccessTokenActionCall =
       RefreshAccessTokenActionCallImpl(core, action)
 
     override def createChangePasswordActionCall(
       core: ActionCall.Core,
-      action: UserService.ChangePasswordCommand
+      action: UserService.UserChangePassword
     ): UserService.ChangePasswordActionCall =
       ChangePasswordActionCallImpl(core, action)
 
     override def createVerifyMyEmailActionCall(
       core: ActionCall.Core,
-      action: UserService.VerifyMyEmailCommand
+      action: UserService.UserVerifyMyEmail
     ): UserService.VerifyMyEmailActionCall =
       VerifyMyEmailActionCallImpl(core, action)
 
     override def createVerifyMyPhoneActionCall(
       core: ActionCall.Core,
-      action: UserService.VerifyMyPhoneCommand
+      action: UserService.UserVerifyMyPhone
     ): UserService.VerifyMyPhoneActionCall =
       VerifyMyPhoneActionCallImpl(core, action)
 
     override def createRequestPasswordResetActionCall(
       core: ActionCall.Core,
-      action: UserService.RequestPasswordResetCommand
+      action: UserService.UserRequestPasswordReset
     ): UserService.RequestPasswordResetActionCall =
       RequestPasswordResetActionCallImpl(core, action)
 
     override def createConfirmPasswordResetActionCall(
       core: ActionCall.Core,
-      action: UserService.ConfirmPasswordResetCommand
+      action: UserService.UserConfirmPasswordReset
     ): UserService.ConfirmPasswordResetActionCall =
       ConfirmPasswordResetActionCallImpl(core, action)
 
     override def createEnrollTwoFactorActionCall(
       core: ActionCall.Core,
-      action: UserService.EnrollTwoFactorCommand
+      action: UserService.UserEnrollTwoFactor
     ): UserService.EnrollTwoFactorActionCall =
       EnrollTwoFactorActionCallImpl(core, action)
 
     override def createVerifyTwoFactorLoginActionCall(
       core: ActionCall.Core,
-      action: UserService.VerifyTwoFactorLoginCommand
+      action: UserService.UserVerifyTwoFactorLogin
     ): UserService.VerifyTwoFactorLoginActionCall =
       VerifyTwoFactorLoginActionCallImpl(core, action)
 
     override def createGetMyAccountActionCall(
       core: ActionCall.Core,
-      action: UserService.GetMyAccountQuery
+      action: UserService.UserGetMyAccount
     ): UserService.GetMyAccountActionCall =
       GetMyAccountActionCallImpl(core, action)
 
     override def createLookupUserByLoginNameActionCall(
       core: ActionCall.Core,
-      action: UserService.LookupUserByLoginNameQuery
+      action: UserService.UserLookupByLoginName
     ): UserService.LookupUserByLoginNameActionCall =
       LookupUserByLoginNameActionCallImpl(core, action)
 
   override val Management: UserAccountComponent.ManagementServiceFactory = new UserAccountComponent.ManagementServiceFactory:
     override def createCreateUserAccountActionCall(
       core: ActionCall.Core,
-      action: ManagementService.CreateUserAccountCommand
+      action: ManagementService.AdminCreateUserAccount
     ): ManagementService.CreateUserAccountActionCall =
       ManagementCreateUserAccountActionCallImpl(core, action)
 
     override def createUpdateUserStatusActionCall(
       core: ActionCall.Core,
-      action: ManagementService.UpdateUserStatusCommand
+      action: ManagementService.AdminUpdateUserStatus
     ): ManagementService.UpdateUserStatusActionCall =
       ManagementUpdateUserStatusActionCallImpl(core, action)
 
     override def createDeleteUserAccountActionCall(
       core: ActionCall.Core,
-      action: ManagementService.DeleteUserAccountCommand
+      action: ManagementService.AdminDeleteUserAccount
     ): ManagementService.DeleteUserAccountActionCall =
       ManagementDeleteUserAccountActionCallImpl(core, action)
 
     override def createListUserAccountsActionCall(
       core: ActionCall.Core,
-      action: ManagementService.ListUserAccountsQuery
+      action: ManagementService.AdminListUserAccounts
     ): ManagementService.ListUserAccountsActionCall =
       ManagementListUserAccountsActionCallImpl(core, action)
 
@@ -328,7 +329,8 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     ): ExecUowM[OperationResponse] =
       for
         password <- exec_from(requiredString(record, List("password")))
-        userRecord = withDefaultStatus(record, defaultStatus)
+        userRecord0 <- exec_from(withRegistrationEmail(record))
+        userRecord = withDefaultStatus(userRecord0, defaultStatus)
         email <- exec_from(requiredString(userRecord, List("email")))
         _ <- requireEmailAvailable(email)
         loginName <- exec_from(requiredString(userRecord, List("loginName", "login_name")))
@@ -589,7 +591,8 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     protected final def enrollTwoFactor(record: Record): ExecUowM[OperationResponse] =
       for
         userId <- exec_from(currentUserId(record))
-        user <- entity_load[UserAccountEntity](userId)
+        userRecord <- rawUserAccountRecord(userId)
+        user <- exec_from(UserAccountEntity.createC(userRecord))
         _ <- exec_from(ComponentFactory.enrollTwoFactor(user.id, user.email, user.loginName.getOrElse(user.email)))
         _ <- exec_from(sendEmailNotification(
           recipient = user.email,
@@ -606,7 +609,8 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         challengeId <- exec_from(requiredString(record, List("challengeId", "challenge_id")))
         code <- exec_from(requiredString(record, List("code", "verificationCode", "verification_code")))
         challenge <- exec_from(ComponentFactory.verifyTwoFactorLoginChallenge(challengeId, code))
-        user <- entity_load[UserAccountEntity](challenge.userId)
+        userRecord <- rawUserAccountRecord(challenge.userId)
+        user <- exec_from(UserAccountEntity.createC(userRecord))
         credentials <- rawCredentialsByUser(user.id)
         credential <- exec_from(firstOrFailure(credentials, s"credential not found for user: ${user.id.print}"))
         response <- _issue_login_response(user, credential.id)
@@ -622,6 +626,14 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           record ++ Record.data("status" -> status)
         case _ =>
           record
+
+    private def withRegistrationEmail(record: Record): Consequence[Record] =
+      if hasStringValue(record, List("email")) then
+        Consequence.success(record)
+      else
+        requiredString(record, List("identifier")).map { identifier =>
+          record ++ Record.data("email" -> identifier)
+        }
 
     private def userByEmail(email: String): ExecUowM[UserAccountEntity] =
       for
@@ -962,7 +974,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           )(using executionContext)
           record <- recordOption match
             case Some(x) => Consequence.success(x)
-            case None => Consequence.failure(s"User account not found: ${userId.print}")
+            case None => Consequence.entityNotFound(s"User account not found: ${userId.print}")
         yield
           record
       }
@@ -1072,12 +1084,12 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
             session <- exec_from(
               sessions.find(session => session.userAccountId == userId && ComponentFactory._is_active_access_session(session)) match
                 case Some(x) => Consequence.success(x)
-                case None => Consequence.failure("No current access session matches the target account.")
+                case None => Consequence.securityAuthenticationRequired("No current access session matches the target account.")
             )
           yield
             session
         case None =>
-          exec_from(Consequence.failure("No current access token is available for logout."))
+          exec_from(Consequence.securityAuthenticationRequired("No current access token is available for logout."))
 
     private def revokeLinkedRefreshSession(accessSession: AccessSessionEntity): ExecUowM[Unit] =
       accessSession.refreshSessionId match
@@ -1169,11 +1181,11 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
               revokeAllAccessSessions(session.userAccountId).flatMap(_ => revokeAllRefreshSessions(session.userAccountId))
             case None =>
               exec_pure(())
-          session <- exec_from(Consequence.failure[RefreshSessionEntity]("refresh token reuse detected"))
+          session <- exec_from(Consequence.securityPermissionDenied[RefreshSessionEntity]("refresh token reuse detected"))
         yield
           session
       else
-        exec_from(Consequence.failure("invalid refresh token"))
+        exec_from(Consequence.securityPermissionDenied("invalid refresh token"))
 
     private def updateLastLoginAt(userId: EntityId): ExecUowM[Unit] =
       for
@@ -1364,7 +1376,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     private def firstOrFailure[A](xs: Vector[A], message: String): Consequence[A] =
       xs.headOption match
         case Some(s) => Consequence.success(s)
-        case None => Consequence.failure(message)
+        case None => Consequence.argumentInvalid(message)
 
     private def recordGetAsC[A](
       record: Record,
@@ -1379,21 +1391,21 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
   private final case class ProvisionalRegistrationActionCallImpl(
     core: ActionCall.Core,
-    override val action: UserService.ProvisionalRegistrationCommand
+    override val action: UserService.UserProvisionalRegistration
   ) extends UserService.ProvisionalRegistrationActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       createUserAndCredential(action.record, Some("provisional"))
 
   private final case class RegisterActionCallImpl(
     core: ActionCall.Core,
-    override val action: UserService.RegisterCommand
+    override val action: UserService.UserRegister
   ) extends UserService.RegisterActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       createUserAndCredential(action.record, Some("registered"))
 
   private final case class PromoteToFormalRegistrationActionCallImpl(
     core: ActionCall.Core,
-    override val action: UserService.PromoteToFormalRegistrationCommand
+    override val action: UserService.UserPromoteToFormalRegistration
   ) extends UserService.PromoteToFormalRegistrationActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       for
@@ -1405,28 +1417,28 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
   private final case class LoginActionCallImpl(
     core: ActionCall.Core,
-    override val action: UserService.LoginCommand
+    override val action: UserService.UserLogin
   ) extends UserService.LoginActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       login(action.record)
 
   private final case class LogoutActionCallImpl(
     core: ActionCall.Core,
-    override val action: UserService.LogoutCommand
+    override val action: UserService.UserLogout
   ) extends UserService.LogoutActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       logout(action.record)
 
   private final case class LogoutAllActionCallImpl(
     core: ActionCall.Core,
-    override val action: UserService.LogoutAllCommand
+    override val action: UserService.UserLogoutAll
   ) extends UserService.LogoutAllActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       logoutAll(action.record)
 
   private final case class RefreshAccessTokenActionCallImpl(
     core: ActionCall.Core,
-    override val action: UserService.RefreshAccessTokenCommand
+    override val action: UserService.UserRefreshAccessToken
   ) extends UserService.RefreshAccessTokenActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       refreshAccessToken(action.record)
@@ -1448,70 +1460,70 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
   private final case class ChangePasswordActionCallImpl(
     core: ActionCall.Core,
-    override val action: UserService.ChangePasswordCommand
+    override val action: UserService.UserChangePassword
   ) extends UserService.ChangePasswordActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       changePassword(action.record)
 
   private final case class GetMyAccountActionCallImpl(
     core: ActionCall.Core,
-    override val action: UserService.GetMyAccountQuery
+    override val action: UserService.UserGetMyAccount
   ) extends UserService.GetMyAccountActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       getMyAccount(action.record)
 
   private final case class LookupUserByLoginNameActionCallImpl(
     core: ActionCall.Core,
-    override val action: UserService.LookupUserByLoginNameQuery
+    override val action: UserService.UserLookupByLoginName
   ) extends UserService.LookupUserByLoginNameActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       lookupUserByLoginName(action.record)
 
   private final case class VerifyMyEmailActionCallImpl(
     core: ActionCall.Core,
-    override val action: UserService.VerifyMyEmailCommand
+    override val action: UserService.UserVerifyMyEmail
   ) extends UserService.VerifyMyEmailActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       verifyMyEmail(action.record)
 
   private final case class VerifyMyPhoneActionCallImpl(
     core: ActionCall.Core,
-    override val action: UserService.VerifyMyPhoneCommand
+    override val action: UserService.UserVerifyMyPhone
   ) extends UserService.VerifyMyPhoneActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       verifyMyPhone(action.record)
 
   private final case class RequestPasswordResetActionCallImpl(
     core: ActionCall.Core,
-    override val action: UserService.RequestPasswordResetCommand
+    override val action: UserService.UserRequestPasswordReset
   ) extends UserService.RequestPasswordResetActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       requestPasswordReset(action.record)
 
   private final case class ConfirmPasswordResetActionCallImpl(
     core: ActionCall.Core,
-    override val action: UserService.ConfirmPasswordResetCommand
+    override val action: UserService.UserConfirmPasswordReset
   ) extends UserService.ConfirmPasswordResetActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       confirmPasswordReset(action.record)
 
   private final case class EnrollTwoFactorActionCallImpl(
     core: ActionCall.Core,
-    override val action: UserService.EnrollTwoFactorCommand
+    override val action: UserService.UserEnrollTwoFactor
   ) extends UserService.EnrollTwoFactorActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       enrollTwoFactor(action.record)
 
   private final case class VerifyTwoFactorLoginActionCallImpl(
     core: ActionCall.Core,
-    override val action: UserService.VerifyTwoFactorLoginCommand
+    override val action: UserService.UserVerifyTwoFactorLogin
   ) extends UserService.VerifyTwoFactorLoginActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       verifyTwoFactorLogin(action.record)
 
   private final case class ManagementCreateUserAccountActionCallImpl(
     core: ActionCall.Core,
-    override val action: ManagementService.CreateUserAccountCommand
+    override val action: ManagementService.AdminCreateUserAccount
   ) extends ManagementService.CreateUserAccountActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       for
@@ -1522,7 +1534,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
   private final case class ManagementUpdateUserStatusActionCallImpl(
     core: ActionCall.Core,
-    override val action: ManagementService.UpdateUserStatusCommand
+    override val action: ManagementService.AdminUpdateUserStatus
   ) extends ManagementService.UpdateUserStatusActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       for
@@ -1533,7 +1545,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
   private final case class ManagementDeleteUserAccountActionCallImpl(
     core: ActionCall.Core,
-    override val action: ManagementService.DeleteUserAccountCommand
+    override val action: ManagementService.AdminDeleteUserAccount
   ) extends ManagementService.DeleteUserAccountActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       for
@@ -1544,7 +1556,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
   private final case class ManagementListUserAccountsActionCallImpl(
     core: ActionCall.Core,
-    override val action: ManagementService.ListUserAccountsQuery
+    override val action: ManagementService.AdminListUserAccounts
   ) extends ManagementService.ListUserAccountsActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       for
@@ -1633,7 +1645,7 @@ object ComponentFactory:
     keys.iterator.map(record.getString).collectFirst {
       case Some(s) => summon[org.goldenport.convert.ValueReader[EntityId]].readC(s)
     }.getOrElse {
-      Consequence.failure(s"Entity id is required: ${keys.mkString("/")}")
+      Consequence.argumentMissingInput(keys)
     }
 
   private def _resolveTargetUserId(
@@ -1720,13 +1732,13 @@ object ComponentFactory:
     if (_creatable_statuses.contains(p))
       Consequence.unit
     else
-      Consequence.failure(s"Status ${p.value} is not allowed for account creation.")
+      Consequence.stateConflict(s"Status ${p.value} is not allowed for account creation.")
 
   def requireAuthenticatable(p: UserAccountStatus): Consequence[Unit] =
     if (_authenticatable_statuses.contains(p))
       Consequence.unit
     else
-      Consequence.failure(s"Status ${p.value} cannot authenticate.")
+      Consequence.securityPermissionDenied(s"Status ${p.value} cannot authenticate.")
 
   def requireTransition(current: UserAccountStatus, target: UserAccountStatus): Consequence[Unit] =
     if (current == target)
@@ -1734,17 +1746,17 @@ object ComponentFactory:
     else if (_transitions.getOrElse(current, Set.empty).contains(target))
       Consequence.unit
     else
-      Consequence.failure(s"Status transition ${current.value} -> ${target.value} is not allowed.")
+      Consequence.stateConflict(s"Status transition ${current.value} -> ${target.value} is not allowed.")
 
   def requirePromotionProofToken(token: String): Consequence[Unit] =
     if (token.trim.nonEmpty)
       Consequence.unit
     else
-      Consequence.failure("Promotion proof token must not be empty.")
+      Consequence.argumentInvalid("Promotion proof token must not be empty.")
 
   def requireEmailVerificationPending(user: Record): Consequence[Unit] =
     user.getString("email_verified_at") match
-      case Some(v) if v.trim.nonEmpty => Consequence.failure("Current account email is already verified.")
+      case Some(v) if v.trim.nonEmpty => Consequence.stateConflict("Current account email is already verified.")
       case _ => Consequence.unit
 
   def requirePhoneVerificationPending(
@@ -1753,12 +1765,12 @@ object ComponentFactory:
   ): Consequence[Unit] =
     user.getString("phone_number") match
       case None | Some("") =>
-        Consequence.failure("Current account does not have an SMS contact to verify.")
+        Consequence.stateConflict("Current account does not have an SMS contact to verify.")
       case Some(phone) if phone != requestedPhoneNumber =>
-        Consequence.failure(s"Requested phone number does not match the current account SMS contact: $requestedPhoneNumber")
+        Consequence.argumentInvalid(s"Requested phone number does not match the current account SMS contact: $requestedPhoneNumber")
       case Some(_) =>
         user.getString("phone_verified_at") match
-          case Some(v) if v.trim.nonEmpty => Consequence.failure("Current account phone number is already verified.")
+          case Some(v) if v.trim.nonEmpty => Consequence.stateConflict("Current account phone number is already verified.")
           case _ => Consequence.unit
 
   def requireEmailAvailable(
@@ -1768,7 +1780,7 @@ object ComponentFactory:
     if (users.isEmpty)
       Consequence.unit
     else
-      Consequence.failure(s"User account email is already registered: $email")
+      Consequence.stateConflict(s"User account email is already registered: $email")
 
   def requireLoginNameAvailable(
     loginName: String,
@@ -1777,7 +1789,7 @@ object ComponentFactory:
     if (users.isEmpty)
       Consequence.unit
     else
-      Consequence.failure(s"User account loginName is already registered: $loginName")
+      Consequence.stateConflict(s"User account loginName is already registered: $loginName")
 
   def requireLoggedIn(id: EntityId)(using ExecutionContext): Consequence[Unit] =
     currentLoggedInUserId(id).map(_ => ())
@@ -1788,6 +1800,7 @@ object ComponentFactory:
   def currentLoggedInUserId()(using ctx: ExecutionContext): Consequence[EntityId] =
     _current_logged_in_user_id_from_session_id()
       .orElse(_current_logged_in_user_id_from_access_token())
+      .orElse(_current_logged_in_user_id_from_principal_attribute())
       .orElse(LoginWorkingSet.currentUserId())
 
   def currentLoggedInUserId(id: EntityId)(using ctx: ExecutionContext): Consequence[EntityId] =
@@ -1795,7 +1808,7 @@ object ComponentFactory:
       if (current == id)
         Consequence.success(id)
       else
-        Consequence.failure(s"Current authenticated user does not match target user account: ${id.print}")
+        Consequence.securityPermissionDenied(s"Current authenticated user does not match target user account: ${id.print}")
     }
 
   def generateToken(): String =
@@ -1806,14 +1819,43 @@ object ComponentFactory:
       case Some(sessionId) =>
         _restore_access_session_by_id(sessionId).map(_.userAccountId)
       case None =>
-        Consequence.failure("No session id is available in security context.")
+        Consequence.securityAuthenticationRequired("No session id is available in security context.")
 
   private def _current_logged_in_user_id_from_access_token()(using ctx: ExecutionContext): Consequence[EntityId] =
     ctx.security.principal.attributes.get("access_token").filter(_.trim.nonEmpty) match
       case Some(token) =>
         _active_access_session_by_token(token).map(_.userAccountId)
       case None =>
-        Consequence.failure("No access token is available in security context.")
+        Consequence.securityAuthenticationRequired("No access token is available in security context.")
+
+  private def _current_logged_in_user_id_from_principal_attribute()(using ctx: ExecutionContext): Consequence[EntityId] =
+    List("user_account_id", "userAccountId", "authorAccountId").view
+      .flatMap(key => ctx.security.principal.attributes.get(key).filter(_.trim.nonEmpty))
+      .headOption match
+        case Some(value) => _principal_entity_id(value)
+        case None => Consequence.securityAuthenticationRequired("No user account id is available in security context.")
+
+  private def _principal_entity_id(value: String): Consequence[EntityId] =
+    EntityId.parse(value).orElse {
+      value.split("-entity-", 2).toList match
+        case majorMinor :: rest :: Nil =>
+          val major = majorMinor.takeWhile(_ != '-')
+          val minor = majorMinor.drop(major.length + 1)
+          val tail = rest.split("-", 4).toList
+          tail match
+            case collection :: timestamp :: entropy :: _ =>
+              Consequence.success(EntityId(
+                major,
+                minor,
+                EntityCollectionId(major, minor, collection),
+                scala.util.Try(java.time.Instant.ofEpochMilli(timestamp.toLong)).toOption,
+                Some(entropy)
+              ))
+            case _ =>
+              Consequence.valueFormatError(s"Invalid EntityId value: $value")
+        case _ =>
+          Consequence.valueFormatError(s"Invalid EntityId value: $value")
+    }
 
   private def _active_access_session_by_token(
     token: String
@@ -1822,7 +1864,7 @@ object ComponentFactory:
     _raw_access_sessions_by_token_hash(hashed).flatMap { sessions =>
       sessions.find(_is_active_access_session) match
         case Some(session) => Consequence.success(session)
-        case None => Consequence.failure("No active access session matches the current access token.")
+        case None => Consequence.securityAuthenticationRequired("No active access session matches the current access token.")
     }
 
   private def _raw_access_sessions_by_token_hash(
@@ -1893,9 +1935,9 @@ object ComponentFactory:
         _password_reset_tokens.update(token, consumed)
         Consequence.success(consumed)
       case Some(_) =>
-        Consequence.failure("invalid password reset token")
+        Consequence.securityPermissionDenied("invalid password reset token")
       case None =>
-        Consequence.failure("invalid password reset token")
+        Consequence.securityPermissionDenied("invalid password reset token")
 
   private def enrollTwoFactor(
     userId: EntityId,
@@ -1934,9 +1976,9 @@ object ComponentFactory:
         _two_factor_login_challenges.update(challengeId, consumed)
         Consequence.success(consumed)
       case Some(_) =>
-        Consequence.failure("invalid two-factor challenge")
+        Consequence.securityPermissionDenied("invalid two-factor challenge")
       case None =>
-        Consequence.failure("invalid two-factor challenge")
+        Consequence.securityPermissionDenied("invalid two-factor challenge")
 
   def resetEphemeralSecurityStateForTest(): Unit =
     _password_reset_tokens.clear()
@@ -2052,7 +2094,7 @@ object ComponentFactory:
         case value if value.trim.nonEmpty => value.trim
       }
       .map(Consequence.success)
-      .getOrElse(Consequence.failure("login identifier is required"))
+      .getOrElse(Consequence.argumentMissingInput("login identifier"))
 
   private def _required_login_password(
     request: AuthenticationRequest
@@ -2061,7 +2103,7 @@ object ComponentFactory:
       .filter(_.trim.nonEmpty)
       .map(_.trim)
       .map(Consequence.success)
-      .getOrElse(Consequence.failure("password is required"))
+      .getOrElse(Consequence.argumentMissingInput("password"))
 
   private def _resolve_login_email(
     identifier: String
@@ -2083,11 +2125,11 @@ object ComponentFactory:
           case Some(sessionId) if sessionId.trim.nonEmpty =>
             authenticateSessionId(sessionId.trim)
           case _ if record.getString("challengeId").nonEmpty =>
-            Consequence.failure("two-factor challenge required")
+            Consequence.securityPermissionDenied("two-factor challenge required")
           case _ =>
-            Consequence.failure("textus-user-account login did not return accessSessionId")
+            Consequence.operationInvalid("login", "textus-user-account login did not return accessSessionId")
       case other =>
-        Consequence.failure(s"textus-user-account login returned unexpected response: ${other.getClass.getSimpleName}")
+        Consequence.operationInvalid("login", s"textus-user-account login returned unexpected response: ${other.getClass.getSimpleName}")
 
   private def _execute_request(
     component: Component,
@@ -2099,7 +2141,7 @@ object ComponentFactory:
         val call = component.logic.createActionCall(action, ctx)
         component.actionEngine.execute(call)
       case other =>
-        Consequence.failure(s"request did not resolve to action: $other")
+        Consequence.operationInvalid("request", s"request did not resolve to action: $other")
     }
 
   def authenticateSessionId(
@@ -2117,7 +2159,7 @@ object ComponentFactory:
     for
       session <- _load_access_session_by_id(sessionId)
       _ <- if (_is_revoked_access_session(session))
-        Consequence.failure("invalid session")
+        Consequence.securityAuthenticationRequired("invalid session")
       else
         Consequence.unit
       _ <- _revoke_access_session_direct(session.id)
@@ -2134,7 +2176,7 @@ object ComponentFactory:
         if (_is_active_access_session(session))
           _touch_access_session(session.id).map(_ => session.copy(lastAccessedAt = Some(Instant.now)))
         else if (_is_revoked_access_session(session))
-          Consequence.failure("invalid session")
+          Consequence.securityAuthenticationRequired("invalid session")
         else
           _rotate_internal_session_state(session)
     yield
@@ -2148,7 +2190,7 @@ object ComponentFactory:
         for
           refreshId <- EntityId.parse(refreshIdText)
           refresh <- _load_refresh_session(refreshId)
-          _ <- if (isActiveRefreshSession(refresh)) Consequence.unit else Consequence.failure("invalid session")
+          _ <- if (isActiveRefreshSession(refresh)) Consequence.unit else Consequence.securityAuthenticationRequired("invalid session")
           successor <- _issue_refresh_session_direct(
             refresh.userAccountId,
             None,
@@ -2185,7 +2227,7 @@ object ComponentFactory:
         yield
           restored
       case None =>
-        Consequence.failure("invalid session")
+        Consequence.securityAuthenticationRequired("invalid session")
 
   private def _load_access_session_by_id(
     sessionId: String
@@ -2365,7 +2407,7 @@ object ComponentFactory:
     _raw_refresh_sessions_by_token_hash(hashed).flatMap { sessions =>
       sessions.find(isActiveRefreshSession) match
         case Some(session) => Consequence.success(session)
-        case None => Consequence.failure("No active refresh session matches the current refresh token.")
+        case None => Consequence.securityAuthenticationRequired("No active refresh session matches the current refresh token.")
     }
 
   private def _raw_refresh_sessions_by_token_hash(
@@ -2537,8 +2579,8 @@ object ComponentFactory:
     def currentUserId(): Consequence[EntityId] =
       users.keys.toVector match
         case Vector(id) => Consequence.success(id)
-        case Vector() => Consequence.failure("No active user account is available in working set.")
-        case _ => Consequence.failure("Multiple active user accounts are available in working set.")
+        case Vector() => Consequence.stateConflict("No active user account is available in working set.")
+        case _ => Consequence.stateConflict("Multiple active user accounts are available in working set.")
 
     def snapshot: Vector[UserAccountEntity] =
       users.values.toVector
@@ -2555,7 +2597,7 @@ object ComponentFactory:
         LoginWorkingSet.upsert(user)
         Consequence.unit
       case None =>
-        Consequence.failure(s"User account not found for working set: ${userId.print}")
+        Consequence.entityNotFound(s"User account not found for working set: ${userId.print}")
     }
 
   def create(componentCreate: ComponentCreate): Vector[Component] =

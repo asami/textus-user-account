@@ -17,7 +17,7 @@ lazy val root = (project in file("."))
       "SimpleModeling.org" at "https://www.simplemodeling.org/maven"
     ),
     libraryDependencies ++= Seq(
-      "org.goldenport" %% "goldenport-cncf" % "0.4.5-SNAPSHOT",
+      "org.goldenport" %% "goldenport-cncf" % "0.4.6-SNAPSHOT",
       "org.scalatest" %% "scalatest" % "3.2.19" % Test
     ),
     cozyManifestMetadata ++= Map(

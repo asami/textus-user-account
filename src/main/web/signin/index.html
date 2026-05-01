@@ -126,10 +126,10 @@
         box.classList.add("d-none");
         box.textContent = "";
         const body = new URLSearchParams();
-        body.set("username", document.getElementById("username").value);
+        body.set("identifier", document.getElementById("username").value);
         body.set("password", document.getElementById("password").value);
         try {
-          const response = await fetch("/form-api/textus-user-account/user/login", {
+          const response = await fetch("/form-api/user-account/user/login", {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
             credentials: "omit",

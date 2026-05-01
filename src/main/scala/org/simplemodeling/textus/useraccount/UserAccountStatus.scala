@@ -7,7 +7,8 @@ import org.simplemodeling.model.statemachine.StateMachine
 
 /*
  * @since   Apr.  6, 2026
- * @version Apr.  8, 2026
+ *  version Apr.  8, 2026
+ * @version May.  1, 2026
  * @author  ASAMI, Tomoharu
  */
 sealed abstract class UserAccountStatus(
@@ -34,12 +35,12 @@ object UserAccountStatus {
   def parse(p: String): Consequence[UserAccountStatus] =
     Option(p).map(_.trim.toLowerCase).flatMap(_by_name.get) match
       case Some(s) => Consequence.success(s)
-      case None => Consequence.failure(s"Invalid user-account status: $p")
+      case None => Consequence.valueInvalid(s"Invalid user-account status: $p")
 
   def parseDbValue(p: Int): Consequence[UserAccountStatus] =
     _by_db_value.get(p) match
       case Some(s) => Consequence.success(s)
-      case None => Consequence.failure(s"Invalid user-account status dbValue: $p")
+      case None => Consequence.valueInvalid(s"Invalid user-account status dbValue: $p")
 
   given ValueReader[UserAccountStatus] with
     def readC(v: Any): Consequence[UserAccountStatus] =

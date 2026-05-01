@@ -13,7 +13,8 @@ import org.simplemodeling.textus.useraccount.GeneratedDomainComponentLoader
 /*
  * @since   May. 23, 2025
  *  version Mar. 23, 2026
- * @version Mar. 25, 2026
+ *  version Mar. 25, 2026
+ * @version May.  1, 2026
  * @author  ASAMI, Tomoharu
  */
 object TextusUserAccountAwaitCommandMain {
@@ -86,7 +87,7 @@ object TextusUserAccountAwaitCommandMain {
         _parseCommandArgs(runtime, subsystem, normalized).flatMap { req =>
           req.component.flatMap(name => subsystem.components.find(_.name == name)) match {
             case None =>
-              Consequence.failure(s"component not found: ${req.component.getOrElse("")}")
+              Consequence.componentNotFound(req.component.getOrElse(""))
             case Some(component) =>
               component.logic.makeOperationRequest(req).flatMap {
                 case action: Action =>
@@ -102,7 +103,7 @@ object TextusUserAccountAwaitCommandMain {
                       Consequence.success(other)
                   }
                 case _ =>
-                  Consequence.failure("OperationRequest must be Action")
+                  Consequence.operationInvalid("OperationRequest", "OperationRequest must be Action")
               }
           }
         }

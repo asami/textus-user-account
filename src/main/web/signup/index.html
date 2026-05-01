@@ -34,9 +34,9 @@
                   <input class="form-control" id="loginName" name="loginName" autocomplete="username" required>
                   <div class="form-text">Must be unique. Used as the account login name in the current Textus user-account model.</div>
                 </div>
-                <div class="col-12 col-md-6" data-textus-field="email">
-                  <label class="form-label" for="email">Email</label>
-                  <input class="form-control" id="email" name="email" type="email" autocomplete="email" required>
+                <div class="col-12 col-md-6" data-textus-field="identifier">
+                  <label class="form-label" for="identifier">Email</label>
+                  <input class="form-control" id="identifier" name="identifier" type="email" autocomplete="email" required>
                   <div class="form-text">Used for sign-in, password reset, and optional two-factor notifications.</div>
                 </div>
                 <div class="col-12 col-md-6" data-textus-field="phoneNumber">
@@ -112,24 +112,48 @@
         } catch (_) {}
         return text || fallback || ("Request failed (" + status + ").");
       }
+
+      function isJobId(value) {
+        return /^cncf-job-job-/.test((value || "").trim());
+      }
+
+      async function awaitJobResult(jobId) {
+        const body = new URLSearchParams();
+        body.set("id", jobId);
+        const response = await fetch("/rest/v1/job_control/job/await_job_result", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          credentials: "omit",
+          body
+        });
+        const text = await response.text();
+        return { response, text };
+      }
+
       form.addEventListener("submit", async function(event) {
         event.preventDefault();
         error.classList.add("d-none");
         error.textContent = "";
         const body = new URLSearchParams(new FormData(form));
         try {
-          const response = await fetch("/form-api/textus-user-account/user/register", {
+          const response = await fetch("/form-api/user-account/user/register", {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
             credentials: "omit",
             body
           });
-          if (response.ok) {
+          let text = await response.text();
+          let effectiveResponse = response;
+          if (response.ok && isJobId(text)) {
+            const awaited = await awaitJobResult(text.trim());
+            effectiveResponse = awaited.response;
+            text = awaited.text;
+          }
+          if (effectiveResponse.ok) {
             window.location.href = signinPath + "?returnTo=" + encodeURIComponent(returnTo);
             return;
           }
-          const text = await response.text();
-          error.textContent = structuredErrorMessage(text, response.status, "Registration failed (" + response.status + ").");
+          error.textContent = structuredErrorMessage(text, effectiveResponse.status, "Registration failed (" + effectiveResponse.status + ").");
           error.classList.remove("d-none");
         } catch (_) {
           error.textContent = "Unable to reach the account service. Restart the local server and try again.";

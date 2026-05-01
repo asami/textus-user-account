@@ -49,7 +49,7 @@
         event.preventDefault();
         error.classList.add('d-none');
         try {
-          const response = await fetch('/form-api/textus-user-account/user/confirm-password-reset', {
+          const response = await fetch('/form-api/user-account/user/confirm-password-reset', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams(new FormData(form)),

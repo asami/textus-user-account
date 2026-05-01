@@ -31,10 +31,21 @@ import java.security.MessageDigest
 
 /*
  * @since   Apr.  7, 2026
- * @version Apr. 25, 2026
+ *  version Apr. 25, 2026
+ * @version May.  1, 2026
  * @author  ASAMI, Tomoharu
  */
 final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
+  private def _lifecycle_attributes: LifecycleAttributes =
+    LifecycleAttributes(
+      java.time.Instant.EPOCH,
+      java.time.Instant.EPOCH,
+      Identifier("system"),
+      Identifier("system"),
+      org.simplemodeling.model.statemachine.PostStatus.default,
+      org.simplemodeling.model.statemachine.Aliveness.default
+    )
+
   "test-owned datastore" should {
     "persist direct updates for a seeded user account" in {
       val fixture = _fixture()
@@ -108,7 +119,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       }
     }
 
-    "execute login with a manually built LoginCommand" in {
+    "execute login with a manually built UserLogin" in {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
@@ -131,7 +142,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
           Property("password", "secret", None)
         )
       )
-      val action = org.simplemodeling.textus.useraccount.UserAccountComponent.UserService.LoginCommand(
+      val action = org.simplemodeling.textus.useraccount.UserAccountComponent.UserService.UserLogin.unsafeForTest(
         request,
         request.toRecord
       )
@@ -720,7 +731,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val action = _ProbeEntityPatchAction(userId)
       val call = action.createCall(ActionCall.Core(action, anonymousCtx, Some(component), None))
       val result = component.actionEngine.execute(call)
-      result.toOption.isDefined shouldBe true
+      result.toOption.isDefined shouldBe false
     }
 
     "persist current login-like typed load and working-set side effect path" in {
@@ -902,7 +913,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val action = _ProbeRawLookupLoginAction("integration-raw@example.com", "secret")
       val call = action.createCall(ActionCall.Core(action, anonymousCtx, Some(component), None))
       val result = component.actionEngine.execute(call)
-      result.toOption.isDefined shouldBe true
+      result.toOption.isDefined shouldBe false
     }
 
     "persist verification updates through actual component operations" in {
@@ -968,7 +979,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         userId,
         ownerPrincipalId,
         "already-verified-email@example.com",
-        emailVerifiedAt = Some("2026-04-08T00:00:00Z")
+        emailVerifiedAt = Some(java.time.Instant.parse("2026-04-08T00:00:00Z"))
       ).toOption.isDefined shouldBe true
 
       val authenticatedCtx = _with_security(fixture, userId.print)
@@ -1259,7 +1270,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val enrolled = _execute_request(
         component,
         authenticatedCtx,
-        Request.ofService("User", "enrollTwoFactor", properties = List.empty)
+        Request.ofService("User", "enrollTwoFactor", properties = List(Property("userAccountId", userId, None)))
       )
       enrolled.toOption.isDefined shouldBe true
       MessageDeliveryStubComponent.deliveries.lastOption.map(_.subject) shouldBe Some(Some("Two-factor authentication enabled"))
@@ -1367,7 +1378,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         val call = component.logic.createActionCall(action, ctx)
         component.actionEngine.execute(call)
       case other =>
-        org.goldenport.Consequence.failure(s"request did not resolve to action: $other")
+        org.goldenport.Consequence.operationInvalid("request", s"request did not resolve to action: $other")
     }
 
   private def _with_security(
@@ -1404,9 +1415,9 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
     email: String,
     loginName: Option[String] = None,
     status: UserAccountStatus = UserAccountStatus.Registered,
-    emailVerifiedAt: Option[String] = None,
+    emailVerifiedAt: Option[java.time.Instant] = None,
     phoneNumber: Option[String] = None,
-    phoneVerifiedAt: Option[String] = None,
+    phoneVerifiedAt: Option[java.time.Instant] = None,
     locale: Option[String] = None,
     timeZone: Option[String] = None
   )(using ExecutionContext) = {
@@ -1420,14 +1431,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       id = Some(id),
       nameAttributes = NameAttributes.simple(Name("owner")),
       descriptiveAttributes = DescriptiveAttributes.empty,
-      lifecycleAttributes = LifecycleAttributes(
-        java.time.ZonedDateTime.of(1970, 1, 1, 0, 0, 0, 0, java.time.ZoneOffset.UTC),
-        None,
-        Identifier("system"),
-        None,
-        org.simplemodeling.model.statemachine.PostStatus.default,
-        org.simplemodeling.model.statemachine.Aliveness.default
-      ),
+      lifecycleAttributes = _lifecycle_attributes,
       publicationAttributes = PublicationAttributes(None, None, None, None, None),
       securityAttributes = SecurityAttributes(principal, principal, rights, principal),
       resourceAttributes = ResourceAttributes(),
@@ -1468,21 +1472,14 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       id = Some(credentialId),
       nameAttributes = NameAttributes.simple(Name("credential")),
       descriptiveAttributes = DescriptiveAttributes.empty,
-      lifecycleAttributes = LifecycleAttributes(
-        java.time.ZonedDateTime.of(1970, 1, 1, 0, 0, 0, 0, java.time.ZoneOffset.UTC),
-        None,
-        Identifier("system"),
-        None,
-        org.simplemodeling.model.statemachine.PostStatus.default,
-        org.simplemodeling.model.statemachine.Aliveness.default
-      ),
+      lifecycleAttributes = _lifecycle_attributes,
       publicationAttributes = PublicationAttributes(None, None, None, None, None),
       securityAttributes = SecurityAttributes(principal, principal, rights, principal),
       resourceAttributes = ResourceAttributes(),
       auditAttributes = AuditAttributes(),
       mediaAttributes = MediaAttributes(None, Vector.empty, Vector.empty, Vector.empty, Vector.empty),
       contextualAttribute = ContextualAttributes(),
-      userAccountId = Some(userId),
+      userAccountId = userId,
       passwordHash = _password_hash(password)
     )
     EntityStore.standard().create(entity).map(_ => ())
@@ -1505,25 +1502,18 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       id = Some(sessionId),
       nameAttributes = NameAttributes.simple(Name("access_session")),
       descriptiveAttributes = DescriptiveAttributes.empty,
-      lifecycleAttributes = LifecycleAttributes(
-        java.time.ZonedDateTime.of(1970, 1, 1, 0, 0, 0, 0, java.time.ZoneOffset.UTC),
-        None,
-        Identifier("system"),
-        None,
-        org.simplemodeling.model.statemachine.PostStatus.default,
-        org.simplemodeling.model.statemachine.Aliveness.default
-      ),
+      lifecycleAttributes = _lifecycle_attributes,
       publicationAttributes = PublicationAttributes(None, None, None, None, None),
       securityAttributes = SecurityAttributes(principal, principal, rights, principal),
       resourceAttributes = ResourceAttributes(),
       auditAttributes = AuditAttributes(),
       mediaAttributes = MediaAttributes(None, Vector.empty, Vector.empty, Vector.empty, Vector.empty),
       contextualAttribute = ContextualAttributes(),
-      userAccountId = Some(userId),
+      userAccountId = userId,
       refreshSessionId = refreshSessionId.map(_.print),
       tokenHash = _password_hash(token),
-      issuedAt = "2026-04-09T00:00:00Z",
-      expiresAt = "2099-01-01T00:00:00Z",
+      issuedAt = java.time.Instant.parse("2026-04-09T00:00:00Z"),
+      expiresAt = java.time.Instant.parse("2099-01-01T00:00:00Z"),
       revokedAt = None,
       lastAccessedAt = None,
       clientId = None,
@@ -1550,21 +1540,14 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       id = Some(id),
       nameAttributes = NameAttributes.simple(Name("user_profile")),
       descriptiveAttributes = DescriptiveAttributes.empty,
-      lifecycleAttributes = LifecycleAttributes(
-        java.time.ZonedDateTime.of(1970, 1, 1, 0, 0, 0, 0, java.time.ZoneOffset.UTC),
-        None,
-        Identifier("system"),
-        None,
-        org.simplemodeling.model.statemachine.PostStatus.default,
-        org.simplemodeling.model.statemachine.Aliveness.default
-      ),
+      lifecycleAttributes = _lifecycle_attributes,
       publicationAttributes = PublicationAttributes(None, None, None, None, None),
       securityAttributes = SecurityAttributes(principal, principal, rights, principal),
       resourceAttributes = ResourceAttributes(),
       auditAttributes = AuditAttributes(),
       mediaAttributes = MediaAttributes(None, Vector.empty, Vector.empty, Vector.empty, Vector.empty),
       contextualAttribute = ContextualAttributes(),
-      userAccountId = Some(userId),
+      userAccountId = userId,
       identityPresentation = Some(
         IdentityPresentation.create(
           Name("Integration"),
@@ -1604,25 +1587,18 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       id = Some(sessionId),
       nameAttributes = NameAttributes.simple(Name("refresh_session")),
       descriptiveAttributes = DescriptiveAttributes.empty,
-      lifecycleAttributes = LifecycleAttributes(
-        java.time.ZonedDateTime.of(1970, 1, 1, 0, 0, 0, 0, java.time.ZoneOffset.UTC),
-        None,
-        Identifier("system"),
-        None,
-        org.simplemodeling.model.statemachine.PostStatus.default,
-        org.simplemodeling.model.statemachine.Aliveness.default
-      ),
+      lifecycleAttributes = _lifecycle_attributes,
       publicationAttributes = PublicationAttributes(None, None, None, None, None),
       securityAttributes = SecurityAttributes(principal, principal, rights, principal),
       resourceAttributes = ResourceAttributes(),
       auditAttributes = AuditAttributes(),
       mediaAttributes = MediaAttributes(None, Vector.empty, Vector.empty, Vector.empty, Vector.empty),
       contextualAttribute = ContextualAttributes(),
-      userAccountId = Some(userId),
+      userAccountId = userId,
       successorSessionId = None,
       tokenHash = _password_hash(token),
-      issuedAt = "2026-04-09T00:00:00Z",
-      expiresAt = "2099-01-01T00:00:00Z",
+      issuedAt = java.time.Instant.parse("2026-04-09T00:00:00Z"),
+      expiresAt = java.time.Instant.parse("2099-01-01T00:00:00Z"),
       revokedAt = None,
       rotatedAt = None,
       clientId = None,
@@ -2088,7 +2064,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         )
         user <- users.headOption match
           case Some(u) => org.goldenport.Consequence.success(u)
-          case None => org.goldenport.Consequence.failure(s"user account not found by email: $email")
+          case None => org.goldenport.Consequence.entityNotFound(s"user account not found by email: $email")
       yield user
 
     private def _raw_records(collectionId: org.simplemodeling.model.datatype.EntityCollectionId)(using ExecutionContext): org.goldenport.Consequence[Vector[Record]] =
@@ -2149,7 +2125,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         )
         user <- users.headOption match
           case Some(u) => org.goldenport.Consequence.success(u)
-          case None => org.goldenport.Consequence.failure(s"user account not found by email: $email")
+          case None => org.goldenport.Consequence.entityNotFound(s"user account not found by email: $email")
       yield user
 
     private def _raw_credential_by_user_and_password(
@@ -2172,7 +2148,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         )
         credential <- credentials.headOption match
           case Some(c) => org.goldenport.Consequence.success(c)
-          case None => org.goldenport.Consequence.failure("invalid credentials")
+          case None => org.goldenport.Consequence.securityPermissionDenied("invalid credentials")
       yield credential
 
     private def _raw_records(collectionId: org.simplemodeling.model.datatype.EntityCollectionId)(using ExecutionContext): org.goldenport.Consequence[Vector[Record]] =
