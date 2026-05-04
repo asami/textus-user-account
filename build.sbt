@@ -1,7 +1,7 @@
 import org.goldenport.cozy.CozyPlugin.autoImport._
 
 ThisBuild / organization := "org.textus"
-ThisBuild / version := "0.1.1-SNAPSHOT"
+ThisBuild / version := "0.1.1"
 
 lazy val root = (project in file("."))
   .enablePlugins(org.goldenport.cozy.CozyPlugin)
@@ -17,7 +17,7 @@ lazy val root = (project in file("."))
       "SimpleModeling.org" at "https://www.simplemodeling.org/maven"
     ),
     libraryDependencies ++= Seq(
-      "org.goldenport" %% "goldenport-cncf" % "0.4.6-SNAPSHOT",
+      "org.goldenport" %% "goldenport-cncf" % "0.4.6",
       "org.scalatest" %% "scalatest" % "3.2.19" % Test
     ),
     cozyManifestMetadata ++= Map(
