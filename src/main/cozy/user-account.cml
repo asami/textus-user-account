@@ -1385,21 +1385,21 @@ Core user profile and operational account state.
 
 ### ATTRIBUTE
 
-| name              | type      | multiplicity | constraints |
-|-------------------+-----------+--------------+-------------|
-| email             | string    | 1            |             |
-| loginName         | string    | ?            |             |
-| externalSubjectId | string    | ?            |             |
-| emailVerifiedAt   | instant | ?            |             |
-| phoneNumber       | string    | ?            | phone       |
-| locale            | string    | ?            |             |
-| timeZone          | string    | ?            |             |
-| phoneVerifiedAt   | instant | ?            |             |
-| lastLoginAt       | instant | ?            |             |
-| passwordChangedAt | instant | ?            |             |
-| suspendedAt       | instant | ?            |             |
-| suspendedBy       | string    | ?            |             |
-| suspensionReason  | string    | ?            |             |
+| name              | type      | multiplicity | constraints | confidentiality |
+|-------------------+-----------+--------------+-------------+-----------------|
+| email             | string    | 1            |             | personal        |
+| loginName         | string    | ?            |             | personal        |
+| externalSubjectId | string    | ?            |             | personal        |
+| emailVerifiedAt   | instant | ?            |             |                 |
+| phoneNumber       | string    | ?            | phone       | personal        |
+| locale            | string    | ?            |             |                 |
+| timeZone          | string    | ?            |             |                 |
+| phoneVerifiedAt   | instant | ?            |             |                 |
+| lastLoginAt       | instant | ?            |             |                 |
+| passwordChangedAt | instant | ?            |             |                 |
+| suspendedAt       | instant | ?            |             |                 |
+| suspendedBy       | string    | ?            |             |                 |
+| suspensionReason  | string    | ?            |             | internal        |
 
 ### StateMachine
 
@@ -1490,10 +1490,10 @@ Credential aggregate storing hashed secret and owner link.
 
 ### ATTRIBUTE
 
-| name           | type     | multiplicity |
-|----------------+----------+--------------|
-| userAccountId  | entityid | 1            |
-| passwordHash   | string   | 1            |
+| name           | type     | multiplicity | confidentiality |
+|----------------+----------+--------------+-----------------|
+| userAccountId  | entityid | 1            |                 |
+| passwordHash   | string   | 1            | secret          |
 
 ## AccessSession
 
@@ -1507,19 +1507,19 @@ Issued access-session token state owned by a user account.
 
 ### ATTRIBUTE
 
-| name             | type      | multiplicity |
-|------------------+-----------+--------------|
-| userAccountId    | entityid  | 1            |
-| refreshSessionId | string    | ?            |
-| tokenHash        | string    | 1            |
-| issuedAt         | instant | 1            |
-| expiresAt        | instant | 1            |
-| revokedAt        | instant | ?            |
-| lastAccessedAt   | instant | ?            |
-| clientId         | string    | ?            |
-| deviceInfo       | string    | ?            |
-| ipAddress        | string    | ?            |
-| userAgent        | string    | ?            |
+| name             | type      | multiplicity | confidentiality |
+|------------------+-----------+--------------+-----------------|
+| userAccountId    | entityid  | 1            |                 |
+| refreshSessionId | string    | ?            | secret          |
+| tokenHash        | string    | 1            | secret          |
+| issuedAt         | instant | 1            |                 |
+| expiresAt        | instant | 1            |                 |
+| revokedAt        | instant | ?            |                 |
+| lastAccessedAt   | instant | ?            |                 |
+| clientId         | string    | ?            | internal        |
+| deviceInfo       | string    | ?            | internal        |
+| ipAddress        | string    | ?            | personal        |
+| userAgent        | string    | ?            | internal        |
 
 ## RefreshSession
 
@@ -1533,19 +1533,19 @@ Refresh-session token state owned by a user account.
 
 ### ATTRIBUTE
 
-| name               | type      | multiplicity |
-|--------------------+-----------+--------------|
-| userAccountId      | entityid  | 1            |
-| successorSessionId | string    | ?            |
-| tokenHash          | string    | 1            |
-| issuedAt           | instant | 1            |
-| expiresAt          | instant | 1            |
-| revokedAt          | instant | ?            |
-| rotatedAt          | instant | ?            |
-| clientId           | string    | ?            |
-| deviceInfo         | string    | ?            |
-| ipAddress          | string    | ?            |
-| userAgent          | string    | ?            |
+| name               | type      | multiplicity | confidentiality |
+|--------------------+-----------+--------------+-----------------|
+| userAccountId      | entityid  | 1            |                 |
+| successorSessionId | string    | ?            | secret          |
+| tokenHash          | string    | 1            | secret          |
+| issuedAt           | instant | 1            |                 |
+| expiresAt          | instant | 1            |                 |
+| revokedAt          | instant | ?            |                 |
+| rotatedAt          | instant | ?            |                 |
+| clientId           | string    | ?            | internal        |
+| deviceInfo         | string    | ?            | internal        |
+| ipAddress          | string    | ?            | personal        |
+| userAgent          | string    | ?            | internal        |
 
 # COMMAND
 
@@ -1557,10 +1557,10 @@ Minimum command to open a provisional account.
 
 ### ATTRIBUTE
 
-| name      | type   | multiplicity |
-|-----------+--------+--------------|
-| identifier | string | 1            |
-| password   | string | 1            |
+| name      | type   | multiplicity | confidentiality |
+|-----------+--------+--------------+-----------------|
+| identifier | string | 1            | personal        |
+| password   | string | 1            | secret          |
 
 ## UserRegister
 
@@ -1570,15 +1570,15 @@ Command to create a regular account in the standard user registration flow.
 
 ### ATTRIBUTE
 
-| name      | type   | multiplicity |
-|-----------+--------+--------------|
-| name      | name   | 1            |
-| title     | string | 1            |
-| loginName | string | 1            |
-| identifier | string | ?            |
-| password   | string | 1            |
-| locale     | string | ?            |
-| timeZone   | string | ?            |
+| name      | type   | multiplicity | confidentiality |
+|-----------+--------+--------------+-----------------|
+| name      | name   | 1            | personal        |
+| title     | string | 1            | personal        |
+| loginName | string | 1            | personal        |
+| identifier | string | ?            | personal        |
+| password   | string | 1            | secret          |
+| locale     | string | ?            |                 |
+| timeZone   | string | ?            |                 |
 
 ## UserPromoteToFormalRegistration
 
@@ -1588,10 +1588,10 @@ Command to promote an existing provisional account into formal state.
 
 ### ATTRIBUTE
 
-| name           | type     | multiplicity |
-|----------------+----------+--------------|
-| userAccountId  | entityid | 1            |
-| proofToken     | string   | 1            |
+| name           | type     | multiplicity | confidentiality |
+|----------------+----------+--------------+-----------------|
+| userAccountId  | entityid | 1            |                 |
+| proofToken     | string   | 1            | secret          |
 
 ## UserLogin
 
@@ -1601,10 +1601,10 @@ Authentication command for user sign-in.
 
 ### ATTRIBUTE
 
-| name      | type   | multiplicity |
-|-----------+--------+--------------|
-| identifier | string | ?            |
-| password   | string | 1            |
+| name      | type   | multiplicity | confidentiality |
+|-----------+--------+--------------+-----------------|
+| identifier | string | ?            | personal        |
+| password   | string | 1            | secret          |
 
 ## UserVerifyTwoFactorLogin
 
@@ -1614,10 +1614,10 @@ Command to complete a pending two-factor login challenge.
 
 ### ATTRIBUTE
 
-| name        | type   | multiplicity |
-|-------------+--------+--------------|
-| challengeId | string | 1            |
-| code        | string | 1            |
+| name        | type   | multiplicity | confidentiality |
+|-------------+--------+--------------+-----------------|
+| challengeId | string | 1            | secret          |
+| code        | string | 1            | secret          |
 
 ## UserLogout
 
@@ -1651,11 +1651,11 @@ Command to replace an existing password with a new one.
 
 ### ATTRIBUTE
 
-| name             | type     | multiplicity |
-|------------------+----------+--------------|
-| userAccountId    | entityid | ?            |
-| currentPassword  | string   | 1            |
-| newPassword      | string   | 1            |
+| name             | type     | multiplicity | confidentiality |
+|------------------+----------+--------------+-----------------|
+| userAccountId    | entityid | ?            |                 |
+| currentPassword  | string   | 1            | secret          |
+| newPassword      | string   | 1            | secret          |
 
 ## UserRefreshAccessToken
 
@@ -1665,9 +1665,9 @@ Command to exchange a refresh token for a new access token pair.
 
 ### ATTRIBUTE
 
-| name         | type   | multiplicity |
-|--------------+--------+--------------|
-| refreshToken | string | 1            |
+| name         | type   | multiplicity | confidentiality |
+|--------------+--------+--------------+-----------------|
+| refreshToken | string | 1            | secret          |
 
 ## UserVerifyMyEmail
 
@@ -1677,10 +1677,10 @@ Command to confirm the current account email address.
 
 ### ATTRIBUTE
 
-| name          | type     | multiplicity |
-|---------------+----------+--------------|
-| userAccountId | entityid | ?            |
-| proofToken    | string   | 1            |
+| name          | type     | multiplicity | confidentiality |
+|---------------+----------+--------------+-----------------|
+| userAccountId | entityid | ?            |                 |
+| proofToken    | string   | 1            | secret          |
 
 ## UserVerifyMyPhone
 
@@ -1690,11 +1690,11 @@ Command to confirm the current account SMS contact.
 
 ### ATTRIBUTE
 
-| name          | type     | multiplicity |
-|---------------+----------+--------------|
-| userAccountId | entityid | ?            |
-| phoneNumber   | string   | 1            |
-| proofToken    | string   | 1            |
+| name          | type     | multiplicity | confidentiality |
+|---------------+----------+--------------+-----------------|
+| userAccountId | entityid | ?            |                 |
+| phoneNumber   | string   | 1            | personal        |
+| proofToken    | string   | 1            | secret          |
 
 ## AdminCreateUserAccount
 
@@ -1704,13 +1704,13 @@ Administrative command to provision an account directly.
 
 ### ATTRIBUTE
 
-| name      | type   | multiplicity |
-|-----------+--------+--------------|
-| name      | name   | 1            |
-| title     | string | 1            |
-| email     | string | 1            |
-| status    | string | 1            |
-| password  | string | 1            |
+| name      | type   | multiplicity | confidentiality |
+|-----------+--------+--------------+-----------------|
+| name      | name   | 1            | personal        |
+| title     | string | 1            | personal        |
+| email     | string | 1            | personal        |
+| status    | string | 1            |                 |
+| password  | string | 1            | secret          |
 
 ## AdminUpdateUserStatus
 
@@ -1772,12 +1772,12 @@ Administrative query to list accounts with optional filters.
 
 ### ATTRIBUTE
 
-| name    | type   | multiplicity |
-|---------+--------+--------------|
-| status  | string | ?            |
-| email   | string | ?            |
-| offset  | int    | ?            |
-| limit   | int    | ?            |
+| name    | type   | multiplicity | confidentiality |
+|---------+--------+--------------+-----------------|
+| status  | string | ?            |                 |
+| email   | string | ?            | personal        |
+| offset  | int    | ?            |                 |
+| limit   | int    | ?            |                 |
 
 # Scenario
 

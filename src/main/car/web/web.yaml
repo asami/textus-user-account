@@ -63,6 +63,24 @@ apps:
     root: /web/two-factor-challenge
     route: /web/textus-user-account/two-factor/challenge
 
+pages:
+  signin:
+    mode: screen
+  signup:
+    mode: screen
+  password-reset:
+    mode: screen
+  password-reset-sent:
+    mode: screen
+  password-reset-confirm:
+    mode: screen
+  password-reset-success:
+    mode: screen
+  two-factor:
+    mode: screen
+  two-factor-challenge:
+    mode: screen
+
 routes:
   - path: /web/textus-user-account/signin
     target:

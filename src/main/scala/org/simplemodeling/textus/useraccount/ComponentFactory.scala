@@ -18,7 +18,7 @@ import org.goldenport.protocol.{Property, Request}
 import org.goldenport.cncf.action.ActionCall
 import org.goldenport.cncf.component.{Component, ComponentCreate, EntityRuntimePlanProvider}
 import org.goldenport.cncf.CncfVersion
-import org.goldenport.cncf.context.{Capability, ExecutionContext, PrincipalId, SecurityLevel, SessionContext, SubjectKind}
+import org.goldenport.cncf.context.{Capability, ExecutionContext, Principal, PrincipalId, SecurityContext, SecurityLevel, SessionContext, SubjectKind}
 import org.goldenport.cncf.datastore.{Query as DsQuery, QueryDirective as DsQueryDirective}
 import org.goldenport.cncf.directive.Query
 import org.goldenport.cncf.entity.{EntityQuery, EntityStore}
@@ -40,7 +40,7 @@ import org.simplemodeling.textus.useraccount.entity.update.{AccessSession => Acc
  * @since   Mar. 23, 2026
  *  version Mar. 24, 2026
  *  version Apr. 25, 2026
- * @version May.  1, 2026
+ * @version May.  9, 2026
  * @author  ASAMI, Tomoharu
  */
 class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePlanProvider:
@@ -580,8 +580,10 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         reset <- exec_from(ComponentFactory.consumePasswordResetToken(token))
         credentials <- rawCredentialsByUser(reset.userId)
         credential <- exec_from(firstOrFailure(credentials, s"credential not found for user: ${reset.userId.print}"))
-        patch <- exec_from(CredentialUpdate.createC(Record.dataAuto("passwordHash" -> passwordHash(next))))
-        _ <- entity_update(credential.id, patch)
+        _ <- _update_credential_fields_direct(
+          credential.id,
+          Record.dataAuto("password_hash" -> passwordHash(next))
+        )
         _ <- updatePasswordChangedAt(reset.userId)
         _ <- revokeAllAccessSessions(reset.userId)
         _ <- revokeAllRefreshSessions(reset.userId)
@@ -655,21 +657,13 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     private def rawUserAccountsByLoginName(loginName: String): ExecUowM[Vector[UserAccountEntity]] =
       for
         records <- rawRecords(UserAccountQuery.collectionId)
-        ids <- exec_from(
+        users <- exec_from(
           records
             .filter(record =>
               record.getString("login_name").contains(loginName) ||
               record.getString("loginName").contains(loginName)
             )
-            .traverse(_entity_id_of)
-        )
-        users <- exec_from(
-          ids.traverse(id =>
-            EntityStore
-              .standard()
-              .load[UserAccountEntity](id)(using summon, executionContext)
-              .flatMap(x => Consequence.successOrEntityNotFound(x)(id))
-          )
+            .traverse(UserAccountEntity.createC)
         )
       yield
         users
@@ -817,18 +811,10 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     private def rawUserAccountsByEmail(email: String): ExecUowM[Vector[UserAccountEntity]] =
       for
         records <- rawRecords(UserAccountQuery.collectionId)
-        ids <- exec_from(
+        users <- exec_from(
           records
             .filter(_.getString("email").contains(email))
-            .traverse(_entity_id_of)
-        )
-        users <- exec_from(
-          ids.traverse(id =>
-            EntityStore
-              .standard()
-              .load[UserAccountEntity](id)(using summon, executionContext)
-              .flatMap(x => Consequence.successOrEntityNotFound(x)(id))
-          )
+            .traverse(UserAccountEntity.createC)
         )
       yield
         users
@@ -838,18 +824,10 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     ): ExecUowM[Vector[CredentialEntity]] =
       for
         records <- rawRecords(CredentialQuery.collectionId)
-        ids <- exec_from(
+        credentials <- exec_from(
           records
             .filter(_.getString("user_account_id").contains(userId.print))
-            .traverse(_entity_id_of)
-        )
-        credentials <- exec_from(
-          ids.traverse(id =>
-            EntityStore
-              .standard()
-              .load[CredentialEntity](id)(using summon, executionContext)
-              .flatMap(x => Consequence.successOrEntityNotFound(x)(id))
-          )
+            .traverse(CredentialEntity.createC)
         )
       yield
         credentials
@@ -860,21 +838,13 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     ): ExecUowM[Vector[CredentialEntity]] =
       for
         records <- rawRecords(CredentialQuery.collectionId)
-        ids <- exec_from(
+        credentials <- exec_from(
           records
             .filter(r =>
               r.getString("user_account_id").contains(userId.print) &&
                 r.getString("password_hash").contains(hashedPassword)
             )
-            .traverse(_entity_id_of)
-        )
-        credentials <- exec_from(
-          ids.traverse(id =>
-            EntityStore
-              .standard()
-              .load[CredentialEntity](id)(using summon, executionContext)
-              .flatMap(x => Consequence.successOrEntityNotFound(x)(id))
-          )
+            .traverse(CredentialEntity.createC)
         )
       yield
         credentials
@@ -884,18 +854,10 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     ): ExecUowM[Vector[AccessSessionEntity]] =
       for
         records <- rawRecords(AccessSessionQuery.collectionId)
-        ids <- exec_from(
+        sessions <- exec_from(
           records
             .filter(_.getString("token_hash").contains(hashedToken))
-            .traverse(_entity_id_of)
-        )
-        sessions <- exec_from(
-          ids.traverse(id =>
-            EntityStore
-              .standard()
-              .load[AccessSessionEntity](id)(using summon, executionContext)
-              .flatMap(x => Consequence.successOrEntityNotFound(x)(id))
-          )
+            .traverse(AccessSessionEntity.createC)
         )
       yield
         sessions
@@ -905,18 +867,10 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     ): ExecUowM[Vector[RefreshSessionEntity]] =
       for
         records <- rawRecords(RefreshSessionQuery.collectionId)
-        ids <- exec_from(
+        sessions <- exec_from(
           records
             .filter(_.getString("token_hash").contains(hashedToken))
-            .traverse(_entity_id_of)
-        )
-        sessions <- exec_from(
-          ids.traverse(id =>
-            EntityStore
-              .standard()
-              .load[RefreshSessionEntity](id)(using summon, executionContext)
-              .flatMap(x => Consequence.successOrEntityNotFound(x)(id))
-          )
+            .traverse(RefreshSessionEntity.createC)
         )
       yield
         sessions
@@ -926,18 +880,10 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     ): ExecUowM[Vector[AccessSessionEntity]] =
       for
         records <- rawRecords(AccessSessionQuery.collectionId)
-        ids <- exec_from(
+        sessions <- exec_from(
           records
             .filter(_.getString("user_account_id").contains(userId.print))
-            .traverse(_entity_id_of)
-        )
-        sessions <- exec_from(
-          ids.traverse(id =>
-            EntityStore
-              .standard()
-              .load[AccessSessionEntity](id)(using summon, executionContext)
-              .flatMap(x => Consequence.successOrEntityNotFound(x)(id))
-          )
+            .traverse(AccessSessionEntity.createC)
         )
       yield
         sessions
@@ -947,18 +893,10 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     ): ExecUowM[Vector[RefreshSessionEntity]] =
       for
         records <- rawRecords(RefreshSessionQuery.collectionId)
-        ids <- exec_from(
+        sessions <- exec_from(
           records
             .filter(_.getString("user_account_id").contains(userId.print))
-            .traverse(_entity_id_of)
-        )
-        sessions <- exec_from(
-          ids.traverse(id =>
-            EntityStore
-              .standard()
-              .load[RefreshSessionEntity](id)(using summon, executionContext)
-              .flatMap(x => Consequence.successOrEntityNotFound(x)(id))
-          )
+            .traverse(RefreshSessionEntity.createC)
         )
       yield
         sessions
@@ -983,7 +921,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       exec_from {
         for
           cid <- executionContext.entityStoreSpace.dataStoreCollection(collectionId)
-          result <- executionContext.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))
+          result <- executionContext.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))(using executionContext)
         yield
           result.records.toVector
       }
@@ -1198,7 +1136,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
     private def updatePasswordChangedAt(userId: EntityId): ExecUowM[Unit] =
       for
-        _ <- _update_user_account_fields(
+        _ <- _update_user_account_fields_direct(
           userId,
           Record.dataAuto("password_changed_at" -> Instant.now)
         )
@@ -1287,6 +1225,23 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           _ <- ds.update(
             cid,
             org.goldenport.cncf.datastore.DataStore.EntryId(sessionId),
+            changes
+          )(using executionContext)
+        yield
+          ()
+      }
+
+    private def _update_credential_fields_direct(
+      credentialId: EntityId,
+      changes: Record
+    ): ExecUowM[Unit] =
+      exec_from {
+        for
+          cid <- executionContext.entityStoreSpace.dataStoreCollection(CredentialQuery.collectionId)
+          ds <- executionContext.dataStoreSpace.dataStore(cid)
+          _ <- ds.update(
+            cid,
+            org.goldenport.cncf.datastore.DataStore.EntryId(credentialId),
             changes
           )(using executionContext)
         yield
@@ -1873,19 +1828,9 @@ object ComponentFactory:
     for
       cid <- ctx.entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId)
       result <- ctx.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))
-      ids <- result.records.toVector
+      sessions <- result.records.toVector
         .filter(_.getString("token_hash").contains(hashedToken))
-        .traverse(record =>
-          record
-            .getAsC[EntityId]("id")
-            .flatMap(x => Consequence.successOrPropertyNotFound("id", x))
-        )
-      sessions <- ids.traverse(id =>
-        EntityStore
-          .standard()
-          .load[AccessSessionEntity](id)
-          .flatMap(x => Consequence.successOrEntityNotFound(x)(id))
-      )
+        .traverse(AccessSessionEntity.createC)
     yield
       sessions
 
@@ -2058,7 +2003,7 @@ object ComponentFactory:
       email <- _resolve_login_email(identifier)
       response <- _execute_request(
         component,
-        ctx,
+        _anonymous_execution_context(ctx),
         Request.ofService(
           "User",
           "login",
@@ -2071,6 +2016,22 @@ object ComponentFactory:
       result <- _provider_login_result(response)
     yield
       Some(result)
+
+  private def _anonymous_execution_context(
+    ctx: ExecutionContext
+  ): ExecutionContext =
+    ExecutionContext.withSecurityContext(
+      ctx,
+      SecurityContext(
+        principal = new Principal {
+          val id: PrincipalId = SecurityContext.Privilege.Anonymous.principalId
+          val attributes: Map[String, String] = SecurityContext.Privilege.Anonymous.attributes
+        },
+        capabilities = SecurityContext.Privilege.Anonymous.capabilities,
+        level = SecurityContext.Privilege.Anonymous.level,
+        subjectKind = SecurityContext.Privilege.Anonymous.subjectKind
+      )
+    )
 
   private def _request_session_id(
     request: AuthenticationRequest
@@ -2241,12 +2202,44 @@ object ComponentFactory:
   private def _load_access_session(
     sessionId: EntityId
   )(using ctx: ExecutionContext): Consequence[AccessSessionEntity] =
-    EntityStore.standard().load[AccessSessionEntity](sessionId).flatMap(x => Consequence.successOrEntityNotFound(x)(sessionId))
+    EntityStore.standard().load[AccessSessionEntity](sessionId).flatMap {
+      case Some(session) => Consequence.success(session)
+      case None => _load_access_session_from_raw(sessionId)
+    }
 
   private def _load_refresh_session(
     sessionId: EntityId
   )(using ctx: ExecutionContext): Consequence[RefreshSessionEntity] =
-    EntityStore.standard().load[RefreshSessionEntity](sessionId).flatMap(x => Consequence.successOrEntityNotFound(x)(sessionId))
+    EntityStore.standard().load[RefreshSessionEntity](sessionId).flatMap {
+      case Some(session) => Consequence.success(session)
+      case None => _load_refresh_session_from_raw(sessionId)
+    }
+
+  private def _load_access_session_from_raw(
+    sessionId: EntityId
+  )(using ctx: ExecutionContext): Consequence[AccessSessionEntity] =
+    for
+      cid <- ctx.entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId)
+      result <- ctx.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))
+      record <- Consequence.successOrEntityNotFound(
+        result.records.toVector.find(_record_entity_id_matches(_, sessionId))
+      )(sessionId)
+      session <- AccessSessionEntity.createC(record)
+    yield
+      session
+
+  private def _load_refresh_session_from_raw(
+    sessionId: EntityId
+  )(using ctx: ExecutionContext): Consequence[RefreshSessionEntity] =
+    for
+      cid <- ctx.entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId)
+      result <- ctx.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))
+      record <- Consequence.successOrEntityNotFound(
+        result.records.toVector.find(_record_entity_id_matches(_, sessionId))
+      )(sessionId)
+      session <- RefreshSessionEntity.createC(record)
+    yield
+      session
 
   private def _issue_refresh_session_direct(
     userId: EntityId,
@@ -2361,19 +2354,9 @@ object ComponentFactory:
     for
       cid <- ctx.entityStoreSpace.dataStoreCollection(UserAccountQuery.collectionId)
       result <- ctx.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))
-      ids <- result.records.toVector
+      users <- result.records.toVector
         .filter(_.getString("login_name").contains(loginName))
-        .traverse(record =>
-          record
-            .getAsC[EntityId]("id")
-            .flatMap(x => Consequence.successOrPropertyNotFound("id", x))
-        )
-      users <- ids.traverse(id =>
-        EntityStore
-          .standard()
-          .load[UserAccountEntity](id)
-          .flatMap(x => Consequence.successOrEntityNotFound(x)(id))
-      )
+        .traverse(UserAccountEntity.createC)
     yield
       users
 
@@ -2398,7 +2381,23 @@ object ComponentFactory:
   private def _load_user_account(
     userId: EntityId
   )(using ctx: ExecutionContext): Consequence[UserAccountEntity] =
-    EntityStore.standard().load[UserAccountEntity](userId).flatMap(x => Consequence.successOrEntityNotFound(x)(userId))
+    EntityStore.standard().load[UserAccountEntity](userId).flatMap {
+      case Some(user) => Consequence.success(user)
+      case None => _load_user_account_from_raw(userId)
+    }
+
+  private def _load_user_account_from_raw(
+    userId: EntityId
+  )(using ctx: ExecutionContext): Consequence[UserAccountEntity] =
+    for
+      cid <- ctx.entityStoreSpace.dataStoreCollection(UserAccountQuery.collectionId)
+      result <- ctx.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))
+      record <- Consequence.successOrEntityNotFound(
+        result.records.toVector.find(_record_entity_id_matches(_, userId))
+      )(userId)
+      user <- UserAccountEntity.createC(record)
+    yield
+      user
 
   private def _active_refresh_session_by_token(
     token: String
@@ -2416,21 +2415,15 @@ object ComponentFactory:
     for
       cid <- ctx.entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId)
       result <- ctx.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))
-      ids <- result.records.toVector
+      sessions <- result.records.toVector
         .filter(_.getString("token_hash").contains(hashedToken))
-        .traverse(record =>
-          record
-            .getAsC[EntityId]("id")
-            .flatMap(x => Consequence.successOrPropertyNotFound("id", x))
-        )
-      sessions <- ids.traverse(id =>
-        EntityStore
-          .standard()
-          .load[RefreshSessionEntity](id)
-          .flatMap(x => Consequence.successOrEntityNotFound(x)(id))
-      )
+        .traverse(RefreshSessionEntity.createC)
     yield
       sessions
+
+  private def _record_entity_id_matches(record: Record, id: EntityId): Boolean =
+    record.getAsC[EntityId]("id").toOption.flatten.exists(_ == id) ||
+      record.getString("id").contains(id.print)
 
   private def _authentication_result(
     user: UserAccountEntity,

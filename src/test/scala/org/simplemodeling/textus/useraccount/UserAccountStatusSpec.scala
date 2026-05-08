@@ -22,7 +22,7 @@ import org.simplemodeling.model.datatype.EntityId
 import org.simplemodeling.model.directive.{Condition, Update}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
-import org.simplemodeling.model.value.{AuditAttributes, ContextualAttributes, DescriptiveAttributes, LifecycleAttributes, MediaAttributes, NameAttributes, PublicationAttributes, ResourceAttributes, SecurityAttributes}
+import org.simplemodeling.model.value.{AuditAttributes, ContentAttributes, ContextualAttributes, DescriptiveAttributes, LifecycleAttributes, MediaAttributes, NameAttributes, PublicationAttributes, ResourceAttributes, SecurityAttributes}
 import org.simplemodeling.textus.useraccount.entity.{UserAccount => UserAccountEntity}
 import org.simplemodeling.textus.useraccount.entity.create.{UserAccount => UserAccountCreateEntity}
 import org.simplemodeling.textus.useraccount.entity.query.{UserAccount => UserAccountQuery}
@@ -31,7 +31,7 @@ import org.simplemodeling.textus.useraccount.entity.create.UserAccount.given
 /*
  * @since   Apr.  6, 2026
  *  version Apr. 25, 2026
- * @version May.  1, 2026
+ * @version May.  8, 2026
  * @author  ASAMI, Tomoharu
  */
 final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
@@ -523,6 +523,7 @@ final class UserAccountStatusSpec extends AnyWordSpec with Matchers {
       id = Some(id),
       nameAttributes = NameAttributes.simple(Name("owner")),
       descriptiveAttributes = DescriptiveAttributes.empty,
+      contentAttributes = ContentAttributes.empty,
       lifecycleAttributes = _lifecycle_attributes,
       publicationAttributes = PublicationAttributes(None, None, None, None, None),
       securityAttributes = SecurityAttributes(principal, principal, rights, principal),

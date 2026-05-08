@@ -17,7 +17,7 @@ import org.goldenport.record.Record
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import org.simplemodeling.model.datatype.EntityId
-import org.simplemodeling.model.value.{AuditAttributes, ContextualAttributes, DescriptiveAttributes, IdentityPresentation, LifecycleAttributes, MediaAttributes, NameAttributes, OrganizationSupport, PersonalProfile, PublicationAttributes, ResourceAttributes, SecurityAttributes}
+import org.simplemodeling.model.value.{AuditAttributes, ContentAttributes, ContextualAttributes, DescriptiveAttributes, IdentityPresentation, LifecycleAttributes, MediaAttributes, NameAttributes, OrganizationSupport, PersonalProfile, PublicationAttributes, ResourceAttributes, SecurityAttributes}
 import org.simplemodeling.textus.useraccount.entity.create.{AccessSession => AccessSessionCreateEntity}
 import org.simplemodeling.textus.useraccount.entity.create.{Credential => CredentialCreateEntity}
 import org.simplemodeling.textus.useraccount.entity.create.{UserProfile => UserProfileCreateEntity}
@@ -32,7 +32,7 @@ import java.security.MessageDigest
 /*
  * @since   Apr.  7, 2026
  *  version Apr. 25, 2026
- * @version May.  1, 2026
+ * @version May.  9, 2026
  * @author  ASAMI, Tomoharu
  */
 final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
@@ -714,7 +714,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       rotatedAccess.getString("revoked_at") shouldBe empty
     }
 
-    "surface current login-like patch failure under anonymous context" in {
+    "persist login-like patch after raw entity lookup under owner context without access token" in {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
@@ -731,7 +731,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val action = _ProbeEntityPatchAction(userId)
       val call = action.createCall(ActionCall.Core(action, anonymousCtx, Some(component), None))
       val result = component.actionEngine.execute(call)
-      result.toOption.isDefined shouldBe false
+      result.toOption.isDefined shouldBe true
     }
 
     "persist current login-like typed load and working-set side effect path" in {
@@ -895,7 +895,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       result.toOption.isDefined shouldBe true
     }
 
-    "surface entity update authorization failure in a raw lookup probe action" in {
+    "persist entity update in a raw lookup probe action under owner context without access token" in {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
@@ -913,7 +913,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val action = _ProbeRawLookupLoginAction("integration-raw@example.com", "secret")
       val call = action.createCall(ActionCall.Core(action, anonymousCtx, Some(component), None))
       val result = component.actionEngine.execute(call)
-      result.toOption.isDefined shouldBe false
+      result.toOption.isDefined shouldBe true
     }
 
     "persist verification updates through actual component operations" in {
@@ -1431,6 +1431,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       id = Some(id),
       nameAttributes = NameAttributes.simple(Name("owner")),
       descriptiveAttributes = DescriptiveAttributes.empty,
+      contentAttributes = ContentAttributes.empty,
       lifecycleAttributes = _lifecycle_attributes,
       publicationAttributes = PublicationAttributes(None, None, None, None, None),
       securityAttributes = SecurityAttributes(principal, principal, rights, principal),
@@ -1472,6 +1473,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       id = Some(credentialId),
       nameAttributes = NameAttributes.simple(Name("credential")),
       descriptiveAttributes = DescriptiveAttributes.empty,
+      contentAttributes = ContentAttributes.empty,
       lifecycleAttributes = _lifecycle_attributes,
       publicationAttributes = PublicationAttributes(None, None, None, None, None),
       securityAttributes = SecurityAttributes(principal, principal, rights, principal),
@@ -1502,6 +1504,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       id = Some(sessionId),
       nameAttributes = NameAttributes.simple(Name("access_session")),
       descriptiveAttributes = DescriptiveAttributes.empty,
+      contentAttributes = ContentAttributes.empty,
       lifecycleAttributes = _lifecycle_attributes,
       publicationAttributes = PublicationAttributes(None, None, None, None, None),
       securityAttributes = SecurityAttributes(principal, principal, rights, principal),
@@ -1540,6 +1543,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       id = Some(id),
       nameAttributes = NameAttributes.simple(Name("user_profile")),
       descriptiveAttributes = DescriptiveAttributes.empty,
+      contentAttributes = ContentAttributes.empty,
       lifecycleAttributes = _lifecycle_attributes,
       publicationAttributes = PublicationAttributes(None, None, None, None, None),
       securityAttributes = SecurityAttributes(principal, principal, rights, principal),
@@ -1587,6 +1591,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       id = Some(sessionId),
       nameAttributes = NameAttributes.simple(Name("refresh_session")),
       descriptiveAttributes = DescriptiveAttributes.empty,
+      contentAttributes = ContentAttributes.empty,
       lifecycleAttributes = _lifecycle_attributes,
       publicationAttributes = PublicationAttributes(None, None, None, None, None),
       securityAttributes = SecurityAttributes(principal, principal, rights, principal),
