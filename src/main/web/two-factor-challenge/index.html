@@ -39,6 +39,13 @@
         const match = (targetPath || '').match(/^\/web\/([^/?#]+)/);
         return 'textus-session-' + normalizedSegment(match ? match[1] : 'textus-user-account');
       }
+      function responseDataOf(payload) {
+        return payload && payload.data && typeof payload.data === 'object' ? payload.data : payload || {};
+      }
+      function accessSessionIdOf(payload) {
+        const data = responseDataOf(payload);
+        return data.accessSessionId || data.access_session_id || '';
+      }
 
       function structuredErrorMessage(text, status, fallback) {
         try {
@@ -69,8 +76,8 @@
             error.classList.remove('d-none');
             return;
           }
-          if (payload.accessSessionId) {
-            document.cookie = sessionCookieName(returnTo) + '=' + encodeURIComponent(payload.accessSessionId) + '; Path=/; SameSite=Lax';
+          if (accessSessionIdOf(payload)) {
+            document.cookie = sessionCookieName(returnTo) + '=' + encodeURIComponent(accessSessionIdOf(payload)) + '; Path=/; SameSite=Lax';
             window.location.href = returnTo;
             return;
           }

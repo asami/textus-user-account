@@ -101,12 +101,23 @@
         }
       }
 
+      function responseDataOf(payload) {
+        return payload && payload.data && typeof payload.data === "object" ? payload.data : payload || {};
+      }
+
       function challengeIdOf(payload) {
-        return payload.challengeId || payload.challenge_id || "";
+        const data = responseDataOf(payload);
+        return data.challengeId || data.challenge_id || "";
       }
 
       function accessSessionIdOf(payload) {
-        return payload.accessSessionId || payload.access_session_id || "";
+        const data = responseDataOf(payload);
+        return data.accessSessionId || data.access_session_id || "";
+      }
+
+      function twoFactorRequiredOf(payload) {
+        const data = responseDataOf(payload);
+        return Boolean(data.twoFactorRequired || data.two_factor_required);
       }
 
 
@@ -148,7 +159,7 @@
             box.classList.remove("d-none");
             return;
           }
-          if (payload.twoFactorRequired && challengeIdOf(payload)) {
+          if (twoFactorRequiredOf(payload) && challengeIdOf(payload)) {
             const url = new URL(challengePath, window.location.origin);
             url.searchParams.set("challengeId", challengeIdOf(payload));
             url.searchParams.set("returnTo", returnTo);

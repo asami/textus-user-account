@@ -26,5 +26,25 @@ final class UserAccountWebDescriptorSpec extends AnyWordSpec with Matchers {
         webYaml should include (s"  ${page}:\n    mode: screen")
       }
     }
+
+    "read debug-wrapped form API session responses on sign-in pages" in {
+      val signin = Files.readString(
+        Paths.get("src/main/web/signin/index.html"),
+        StandardCharsets.UTF_8
+      )
+      val challenge = Files.readString(
+        Paths.get("src/main/web/two-factor-challenge/index.html"),
+        StandardCharsets.UTF_8
+      )
+
+      signin should include ("function responseDataOf(payload)")
+      signin should include ("payload.data")
+      signin should include ("function accessSessionIdOf(payload)")
+      signin should include ("function twoFactorRequiredOf(payload)")
+      signin should include ("twoFactorRequiredOf(payload)")
+      challenge should include ("function responseDataOf(payload)")
+      challenge should include ("payload.data")
+      challenge should include ("function accessSessionIdOf(payload)")
+    }
   }
 }
