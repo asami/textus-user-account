@@ -18,7 +18,7 @@ def sampleVersion(envName: String, fileName: String, fallback: String): String =
 val cncfVersion = sampleVersion("CNCF_VERSION", "cncf-version.conf", "0.4.7-SNAPSHOT")
 
 ThisBuild / organization := "org.textus"
-ThisBuild / version := "0.1.1-SNAPSHOT"
+ThisBuild / version := "0.1.2"
 
 lazy val root = (project in file("."))
   .enablePlugins(org.goldenport.cozy.CozyPlugin)
@@ -27,7 +27,6 @@ lazy val root = (project in file("."))
     scalaVersion := scala3Version,
     scalacOptions ++= Seq("-deprecation", "-feature", "-unchecked"),
     cozyGeneratorBackend := "cozy",
-    cozyDelegateProjectDir := Some(file("/Users/asami/src/dev2025/cozy")),
     resolvers ++= Seq(
       Resolver.defaultLocal,
       Resolver.mavenLocal,
@@ -42,5 +41,19 @@ lazy val root = (project in file("."))
       "boundedContext" -> "identity",
       "domain" -> "user-account"
     ),
+    versionScheme := Some("early-semver"),
+    publishMavenStyle := true,
+    publishTo := {
+      val repo = sys.env.get("SIMPLEMODELING_MAVEN_LOCAL")
+        .map(file)
+        .getOrElse(baseDirectory.value / "maven-local")
+
+      Some(
+        Resolver.file(
+          "local-simplemodeling-maven",
+          repo
+        )
+      )
+    },
     Test / fork := false
   )

@@ -1,0 +1,29 @@
+project:
+  name: textus-user-account
+  title: Textus User Account Component
+  path: components/textus/user-account
+  kind: car
+  summary: User account and authentication component for Textus applications.
+  summary_i18n:
+    ja: Textus アプリケーション向けの利用者アカウント・認証コンポーネントです。
+  description: Provides signup, signin, logout, account status, session, credential, and profile operations as a reusable CNCF component.
+  description_i18n:
+    ja: >
+      signup、signin、logout、アカウント状態、セッション、資格情報、
+      プロファイル操作を再利用可能な CNCF コンポーネントとして提供します。
+
+publication:
+  source_manifest:
+    enabled: false
+
+packaging:
+  kind: car
+  car:
+    source_dir: src/main/car
+
+warehouse:
+  repository_artifacts:
+    include:
+      - car
+    modules:
+      - textus-user-account
