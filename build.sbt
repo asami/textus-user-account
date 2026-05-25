@@ -15,7 +15,7 @@ def sampleVersion(envName: String, fileName: String, fallback: String): String =
     }
     .getOrElse(fallback)
 
-val cncfVersion = sampleVersion("CNCF_VERSION", "cncf-version.conf", "0.4.7-SNAPSHOT")
+val cncfVersion = sampleVersion("CNCF_VERSION", "cncf-version.conf", "0.4.7")
 
 ThisBuild / organization := "org.textus"
 ThisBuild / version := "0.1.2"
@@ -30,7 +30,7 @@ lazy val root = (project in file("."))
     resolvers ++= Seq(
       Resolver.defaultLocal,
       Resolver.mavenLocal,
-      "SimpleModeling.org" at "https://www.simplemodeling.org/maven"
+      "SimpleModeling.org" at "https://www.simplemodeling.org/repository/maven"
     ),
     libraryDependencies ++= Seq(
       "org.goldenport" %% "goldenport-cncf" % cncfVersion,
@@ -41,6 +41,14 @@ lazy val root = (project in file("."))
       "boundedContext" -> "identity",
       "domain" -> "user-account"
     ),
+    publish := {
+      val _ = cozyPublishCar.value
+      ()
+    },
+    publishLocal := {
+      val _ = cozyPublishLocalCar.value
+      ()
+    },
     versionScheme := Some("early-semver"),
     publishMavenStyle := true,
     publishTo := {

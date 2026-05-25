@@ -16,6 +16,7 @@ server.log
 maven-local
 .sbt
 component.d
+.cozy
 
 ### Metals (VS Code Scala extension) ###
 .metals/

@@ -1,9 +1,0 @@
-generation:
-  delegate:
-    project_dir: /Users/asami/src/dev2025/cozy
-
-publication:
-  output: /Users/asami/src/dev2025/simplemodeling-org/src/main/publication
-
-warehouse:
-  repository: /Users/asami/src/maven-repository

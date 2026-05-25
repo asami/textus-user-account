@@ -1,0 +1,16 @@
+schemaVersion: 1
+kind: car
+artifactId: textus-user-account
+recommended: 0.1.2
+latestStable: 0.1.2
+status: active
+aliases: []
+versions:
+  - version: 0.1.2
+    channel: stable
+    status: active
+    component: textus-user-account
+    publishedAt: 2026-05-25T17:11:00.920654+09:00
+    file: repository/car/textus-user-account/0.1.2/textus-user-account-0.1.2.car
+    checksum:
+      sha256: ed59c3c6fb77897192158e3e73a0afebb7754939e61d2b4e772f30604b3329b6
