@@ -46,5 +46,19 @@ final class UserAccountWebDescriptorSpec extends AnyWordSpec with Matchers {
       challenge should include ("payload.data")
       challenge should include ("function accessSessionIdOf(payload)")
     }
+
+    "show field-level signup validation messages" in {
+      val signup = Files.readString(
+        Paths.get("src/main/web/signup/index.html"),
+        StandardCharsets.UTF_8
+      )
+
+      signup should include ("<form id=\"signup-form\" novalidate>")
+      signup should include ("function showFieldError(field)")
+      signup should include ("className = \"invalid-feedback\"")
+      signup should include ("field.classList.add(\"is-invalid\")")
+      signup should include ("Review the highlighted fields and try again.")
+      signup should include ("field.addEventListener(\"invalid\"")
+    }
   }
 }

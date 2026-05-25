@@ -17,7 +17,7 @@
             <h1 class="h3 mb-3" data-textus-role="heading">Create account</h1>
             <p class="text-secondary" data-textus-role="subtitle">Register a generic Textus account. Application-specific setup comes later.</p>
             <div id="signup-error" class="alert alert-danger d-none" role="alert"></div>
-            <form id="signup-form">
+            <form id="signup-form" novalidate>
               <div class="row g-3">
                 <div class="col-12 col-md-6" data-textus-field="name">
                   <label class="form-label" for="name">Full name</label>
@@ -117,6 +117,73 @@
         return /^cncf-job-job-/.test((value || "").trim());
       }
 
+      function fieldLabelOf(field) {
+        if (!field.id) {
+          return field.name || "This field";
+        }
+        const label = form.querySelector('label[for="' + field.id + '"]');
+        return label ? label.textContent.trim() : (field.name || "This field");
+      }
+
+      function feedbackOf(field) {
+        const feedbackId = field.id ? field.id + "-feedback" : "";
+        if (feedbackId) {
+          const existing = document.getElementById(feedbackId);
+          if (existing) {
+            return existing;
+          }
+        }
+        const feedback = document.createElement("div");
+        feedback.className = "invalid-feedback";
+        if (feedbackId) {
+          feedback.id = feedbackId;
+          field.setAttribute("aria-describedby", feedbackId);
+        }
+        field.insertAdjacentElement("afterend", feedback);
+        return feedback;
+      }
+
+      function showFieldError(field) {
+        const feedback = feedbackOf(field);
+        const label = fieldLabelOf(field);
+        const message = field.validationMessage || (label + " is invalid.");
+        field.classList.add("is-invalid");
+        field.setAttribute("aria-invalid", "true");
+        feedback.textContent = message;
+      }
+
+      function clearFieldError(field) {
+        field.classList.remove("is-invalid");
+        field.removeAttribute("aria-invalid");
+        const feedbackId = field.id ? field.id + "-feedback" : "";
+        const feedback = feedbackId ? document.getElementById(feedbackId) : null;
+        if (feedback) {
+          feedback.textContent = "";
+        }
+      }
+
+      function validateForm() {
+        const fields = Array.from(form.querySelectorAll("input, textarea, select"));
+        let firstInvalid = null;
+        fields.forEach(function(field) {
+          if (field.validity.valid) {
+            clearFieldError(field);
+          } else {
+            if (!firstInvalid) {
+              firstInvalid = field;
+            }
+            showFieldError(field);
+          }
+        });
+        if (firstInvalid) {
+          firstInvalid.focus();
+          error.textContent = "Review the highlighted fields and try again.";
+          error.classList.remove("d-none");
+          return false;
+        }
+        return true;
+      }
+
       async function awaitJobResult(jobId) {
         const body = new URLSearchParams();
         body.set("id", jobId);
@@ -134,6 +201,9 @@
         event.preventDefault();
         error.classList.add("d-none");
         error.textContent = "";
+        if (!validateForm()) {
+          return;
+        }
         const body = new URLSearchParams(new FormData(form));
         try {
           const response = await fetch("/form-api/user-account/user/register", {
@@ -159,6 +229,18 @@
           error.textContent = "Unable to reach the account service. Restart the local server and try again.";
           error.classList.remove("d-none");
         }
+      });
+
+      Array.from(form.querySelectorAll("input, textarea, select")).forEach(function(field) {
+        field.addEventListener("input", function() {
+          if (field.classList.contains("is-invalid") && field.validity.valid) {
+            clearFieldError(field);
+          }
+        });
+        field.addEventListener("invalid", function(event) {
+          event.preventDefault();
+          showFieldError(field);
+        });
       });
     })();
   </script>

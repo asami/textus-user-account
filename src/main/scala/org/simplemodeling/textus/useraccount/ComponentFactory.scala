@@ -40,7 +40,8 @@ import org.simplemodeling.textus.useraccount.entity.update.{AccessSession => Acc
  * @since   Mar. 23, 2026
  *  version Mar. 24, 2026
  *  version Apr. 25, 2026
- * @version May.  9, 2026
+ *  version May.  9, 2026
+ * @version May. 26, 2026
  * @author  ASAMI, Tomoharu
  */
 class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePlanProvider:
@@ -126,12 +127,9 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         OperationResponse.RecordResponse(
           account.toRecord() ++ Record.dataAuto(
             "userProfile" -> profiles.data.map(_.toRecord()),
-            "user_profile" -> profiles.data.map(_.toRecord()),
             "credential" -> credentials.data.map(_.toRecord()),
             "accessSession" -> accessSessions.data.map(_.toRecord()),
-            "access_session" -> accessSessions.data.map(_.toRecord()),
-            "refreshSession" -> refreshSessions.data.map(_.toRecord()),
-            "refresh_session" -> refreshSessions.data.map(_.toRecord())
+            "refreshSession" -> refreshSessions.data.map(_.toRecord())
           )
         )
 
@@ -327,22 +325,23 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       record: Record,
       defaultStatus: Option[String]
     ): ExecUowM[OperationResponse] =
+      val normalizedrecord = ComponentFactory.normalizeDataStoreRecord(record)
       for
-        password <- exec_from(requiredString(record, List("password")))
-        userRecord0 <- exec_from(withRegistrationEmail(record))
-        userRecord = withDefaultStatus(userRecord0, defaultStatus)
+        password <- exec_from(requiredString(normalizedrecord, List("password")))
+        userRecord0 <- exec_from(_with_registration_email(normalizedrecord))
+        userRecord = _with_default_status(userRecord0, defaultStatus)
         email <- exec_from(requiredString(userRecord, List("email")))
-        _ <- requireEmailAvailable(email)
-        loginName <- exec_from(requiredString(userRecord, List("loginName", "login_name")))
-        _ <- requireLoginNameAvailable(loginName)
-        status <- exec_from(requiredStatus(userRecord))
+        _ <- _require_email_available(email)
+        loginName <- exec_from(requiredString(userRecord, List("loginName")))
+        _ <- _require_login_name_available(loginName)
+        status <- exec_from(_required_status(userRecord))
         _ <- exec_from(ComponentFactory.requireCreatableStatus(status))
         user0 <- exec_from(UserAccountCreate.createWithExecutionContextC(userRecord)(using executionContext))
         user = user0.withResourceAttributes(ResourceAttributes(activationStatus = ComponentFactory.activationStatusForUserAccountStatus(status)))
         created <- entity_create(user)
         credentialRecord = Record.dataAuto(
           "userAccountId" -> created.id,
-          "passwordHash" -> passwordHash(password)
+          "passwordHash" -> _password_hash(password)
         )
         credential0 <- exec_from(CredentialCreate.createWithExecutionContextC(credentialRecord)(using executionContext))
         credential = credential0.withResourceAttributes(ResourceAttributes(activationStatus = ActivationStatus.Active))
@@ -355,12 +354,12 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       forcedStatus: Option[String]
     ): ExecUowM[OperationResponse] =
       for
-        userId <- exec_from(requiredEntityId(record, List("userAccountId", "user_account_id", "id")))
+        userId <- exec_from(_required_entity_id(record, List("userAccountId", "id")))
         user <- entity_load[UserAccountEntity](userId)
         targetStatus <- forcedStatus match
           case Some(s) => exec_from(ComponentFactory.parseStatus(s))
-          case None => exec_from(requiredStatus(record))
-        suspensionReason <- exec_from(optionalString(record, List("suspensionReason", "suspension_reason")))
+          case None => exec_from(_required_status(record))
+        suspensionReason <- exec_from(_optional_string(record, List("suspensionReason")))
         _ <- exec_from(ComponentFactory.requireTransition(user.status, targetStatus))
         _ <- _update_user_account_fields(
           userId,
@@ -371,21 +370,21 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
     protected final def deleteUserAccount(record: Record): ExecUowM[OperationResponse] =
       for
-        userId <- exec_from(requiredEntityId(record, List("userAccountId", "user_account_id", "id")))
-        credentials <- credentialsForUser(userId)
-        _ <- deleteCredentials(credentials)
-        _ <- exec_from(removeLoggedInUser(userId))
+        userId <- exec_from(_required_entity_id(record, List("userAccountId", "id")))
+        credentials <- _credentials_for_user(userId)
+        _ <- _delete_credentials(credentials)
+        _ <- exec_from(_remove_logged_in_user(userId))
         _ <- entity_delete(userId)
       yield
         OperationResponse.void
 
     protected final def listUserAccounts(record: Record): ExecUowM[OperationResponse] =
       for
-        status <- exec_from(optionalStatus(record))
-        email <- exec_from(optionalString(record, List("email")))
-        loginName <- exec_from(optionalString(record, List("loginName", "login_name")))
-        offset <- exec_from(optionalInt(record, List("offset")))
-        limit <- exec_from(optionalInt(record, List("limit")))
+        status <- exec_from(_optional_status(record))
+        email <- exec_from(_optional_string(record, List("email")))
+        loginName <- exec_from(_optional_string(record, List("loginName")))
+        offset <- exec_from(_optional_int(record, List("offset")))
+        limit <- exec_from(_optional_int(record, List("limit")))
         condition = UserAccountQuery(
           id = Condition.any[EntityId],
           name = Condition.any[Name],
@@ -412,22 +411,22 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
     protected final def login(record: Record): ExecUowM[OperationResponse] =
       for
-        identifier <- exec_from(requiredString(record, List("identifier", "username", "email", "loginName", "login_name", "handle")))
+        identifier <- exec_from(requiredString(record, List("identifier", "username", "email", "loginName", "handle")))
         password <- exec_from(requiredString(record, List("password")))
-        user <- userByLoginIdentifier(identifier)
+        user <- _user_by_login_identifier(identifier)
         _ <- exec_from(ComponentFactory.requireAuthenticatable(user.status))
-        credential <- credentialByUserAndPassword(user.id, password)
+        credential <- _credential_by_user_and_password(user.id, password)
         response <-
           if ComponentFactory.isTwoFactorEnrolled(user.id) then
             for
-              challenge <- exec_from(ComponentFactory.issueTwoFactorLoginChallenge(user.id, user.email, user.loginName.getOrElse(user.email)))
-              _ <- exec_from(sendEmailNotification(
+              challenge <- exec_from(ComponentFactory._issue_two_factor_login_challenge(user.id, user.email, user.loginName.getOrElse(user.email)))
+              _ <- exec_from(_send_email_notification(
                 recipient = user.email,
                 subject = "Your Textus verification code",
                 body = s"Use verification code ${challenge.code}. Challenge ID: ${challenge.challengeId}.",
                 templateId = Some("two-factor-login"),
                 attributes = Map(
-                  "challenge_id" -> challenge.challengeId,
+                  "challengeId" -> challenge.challengeId,
                   "code" -> challenge.code,
                   "handle" -> user.loginName.getOrElse(user.email)
                 )
@@ -450,48 +449,48 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
     protected final def logout(record: Record): ExecUowM[OperationResponse] =
       for
-        userId <- exec_from(requiredEntityId(record, List("userAccountId", "user_account_id", "id")))
-        _ <- requireUserSession(userId)
-        accessSession <- requireCurrentAccessSession(userId)
-        _ <- revokeAccessSession(accessSession.id)
-        _ <- revokeLinkedRefreshSession(accessSession)
-        _ <- exec_from(removeLoggedInUser(userId))
+        userId <- exec_from(_required_entity_id(record, List("userAccountId", "id")))
+        _ <- _require_user_session(userId)
+        accessSession <- _require_current_access_session(userId)
+        _ <- _revoke_access_session(accessSession.id)
+        _ <- _revoke_linked_refresh_session(accessSession)
+        _ <- exec_from(_remove_logged_in_user(userId))
       yield
         OperationResponse.void
 
     protected final def logoutAll(record: Record): ExecUowM[OperationResponse] =
       for
-        userId <- exec_from(requiredEntityId(record, List("userAccountId", "user_account_id", "id")))
-        _ <- revokeAllAccessSessions(userId)
-        _ <- revokeAllRefreshSessions(userId)
-        _ <- exec_from(removeLoggedInUser(userId))
+        userId <- exec_from(_required_entity_id(record, List("userAccountId", "id")))
+        _ <- _revoke_all_access_sessions(userId)
+        _ <- _revoke_all_refresh_sessions(userId)
+        _ <- exec_from(_remove_logged_in_user(userId))
       yield
         OperationResponse.void
 
     protected final def refreshAccessToken(record: Record): ExecUowM[OperationResponse] =
       for
-        refreshToken <- exec_from(requiredString(record, List("refreshToken", "refresh_token")))
-        refreshSession <- activeRefreshSessionByToken(refreshToken)
-        _ <- revokeRefreshSessionAsRotated(refreshSession.id)
-        refreshIssued <- issueRefreshSession(
+        refreshToken <- exec_from(requiredString(record, List("refreshToken")))
+        refreshSession <- _active_refresh_session_by_token(refreshToken)
+        _ <- _revoke_refresh_session_as_rotated(refreshSession.id)
+        refreshIssued <- _issue_refresh_session(
           refreshSession.userAccountId,
           None,
-          clientIdFromSecurityContext().orElse(refreshSession.clientId),
-          deviceInfoFromSecurityContext().orElse(refreshSession.deviceInfo),
-          ipAddressFromSecurityContext().orElse(refreshSession.ipAddress),
-          userAgentFromSecurityContext().orElse(refreshSession.userAgent),
+          _client_id_from_security_context().orElse(refreshSession.clientId),
+          _device_info_from_security_context().orElse(refreshSession.deviceInfo),
+          _ip_address_from_security_context().orElse(refreshSession.ipAddress),
+          _user_agent_from_security_context().orElse(refreshSession.userAgent),
           predecessor = Some(refreshSession.id)
         )
-        accessIssued <- issueAccessSession(
+        accessIssued <- _issue_access_session(
           refreshSession.userAccountId,
           None,
           Some(refreshIssued.sessionId),
-          clientIdFromSecurityContext().orElse(refreshSession.clientId),
-          deviceInfoFromSecurityContext().orElse(refreshSession.deviceInfo),
-          ipAddressFromSecurityContext().orElse(refreshSession.ipAddress),
-          userAgentFromSecurityContext().orElse(refreshSession.userAgent)
+          _client_id_from_security_context().orElse(refreshSession.clientId),
+          _device_info_from_security_context().orElse(refreshSession.deviceInfo),
+          _ip_address_from_security_context().orElse(refreshSession.ipAddress),
+          _user_agent_from_security_context().orElse(refreshSession.userAgent)
         )
-        _ <- exec_from(addLoggedInUserForUserId(refreshSession.userAccountId))
+        _ <- exec_from(_add_logged_in_user_for_user_id(refreshSession.userAccountId))
       yield
         OperationResponse(
           Record.data(
@@ -506,64 +505,64 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
     protected final def changePassword(record: Record): ExecUowM[OperationResponse] =
       for
-        userId <- exec_from(requiredEntityId(record, List("userAccountId", "user_account_id", "id")))
-        current <- exec_from(requiredString(record, List("currentPassword", "current_password")))
-        next <- exec_from(requiredString(record, List("newPassword", "new_password")))
-        credential <- credentialByUserAndPassword(userId, current)
-        patch <- exec_from(CredentialUpdate.createC(Record.dataAuto("passwordHash" -> passwordHash(next))))
+        userId <- exec_from(_required_entity_id(record, List("userAccountId", "id")))
+        current <- exec_from(requiredString(record, List("currentPassword")))
+        next <- exec_from(requiredString(record, List("newPassword")))
+        credential <- _credential_by_user_and_password(userId, current)
+        patch <- exec_from(CredentialUpdate.createC(Record.dataAuto("passwordHash" -> _password_hash(next))))
         _ <- entity_update(credential.id, patch)
-        _ <- updatePasswordChangedAt(userId)
-        _ <- revokeAllAccessSessions(userId)
-        _ <- revokeAllRefreshSessions(userId)
+        _ <- _update_password_changed_at(userId)
+        _ <- _revoke_all_access_sessions(userId)
+        _ <- _revoke_all_refresh_sessions(userId)
       yield
         OperationResponse.void
 
     protected final def getMyAccount(record: Record): ExecUowM[OperationResponse] =
       for
-        userId <- exec_from(currentUserId(record))
+        userId <- exec_from(_current_user_id(record))
         user <- entity_load[UserAccountEntity](userId)
       yield
         OperationResponse(_public_user_record(user))
 
     protected final def verifyMyEmail(record: Record): ExecUowM[OperationResponse] =
       for
-        userId <- exec_from(currentUserId(record))
-        user <- rawUserAccountRecord(userId)
-        proofToken <- exec_from(requiredString(record, List("proofToken", "proof_token")))
+        userId <- exec_from(_current_user_id(record))
+        user <- _raw_user_account_record(userId)
+        proofToken <- exec_from(requiredString(record, List("proofToken")))
         _ <- exec_from(ComponentFactory.requirePromotionProofToken(proofToken))
         _ <- exec_from(ComponentFactory.requireEmailVerificationPending(user))
-        _ <- updateEmailVerifiedAt(userId)
+        _ <- _update_email_verified_at(userId)
       yield
         OperationResponse.void
 
     protected final def verifyMyPhone(record: Record): ExecUowM[OperationResponse] =
       for
-        userId <- exec_from(currentUserId(record))
-        user <- rawUserAccountRecord(userId)
-        phoneNumber <- exec_from(requiredString(record, List("phoneNumber", "phone_number")))
-        proofToken <- exec_from(requiredString(record, List("proofToken", "proof_token")))
+        userId <- exec_from(_current_user_id(record))
+        user <- _raw_user_account_record(userId)
+        phoneNumber <- exec_from(requiredString(record, List("phoneNumber")))
+        proofToken <- exec_from(requiredString(record, List("proofToken")))
         _ <- exec_from(ComponentFactory.requirePromotionProofToken(proofToken))
         _ <- exec_from(ComponentFactory.requirePhoneVerificationPending(user, phoneNumber))
-        _ <- updatePhoneVerification(userId, phoneNumber)
+        _ <- _update_phone_verification(userId, phoneNumber)
       yield
         OperationResponse.void
 
     protected final def requestPasswordReset(record: Record): ExecUowM[OperationResponse] =
       for
         email <- exec_from(requiredString(record, List("email")))
-        users <- rawUserAccountsByEmail(email)
-        _ <- users.headOption match
+        _users <- _raw_user_accounts_by_email(email)
+        _ <- _users.headOption match
           case Some(user) =>
             for
               _ <- exec_from(ComponentFactory.requireAuthenticatable(user.status))
-              token <- exec_from(ComponentFactory.issuePasswordResetToken(user.id, user.email, user.loginName.getOrElse(user.email)))
-              _ <- exec_from(sendEmailNotification(
+              token <- exec_from(ComponentFactory._issue_password_reset_token(user.id, user.email, user.loginName.getOrElse(user.email)))
+              _ <- exec_from(_send_email_notification(
                 recipient = user.email,
                 subject = "Reset your Textus password",
                 body = s"Open /web/textus-user-account/password-reset/confirm?token=${token.token} to continue.",
                 templateId = Some("password-reset"),
                 attributes = Map(
-                  "reset_token" -> token.token,
+                  "resetToken" -> token.token,
                   "handle" -> user.loginName.getOrElse(user.email)
                 )
               ))
@@ -575,28 +574,28 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
     protected final def confirmPasswordReset(record: Record): ExecUowM[OperationResponse] =
       for
-        token <- exec_from(requiredString(record, List("token", "resetToken", "reset_token")))
-        next <- exec_from(requiredString(record, List("newPassword", "new_password", "password")))
-        reset <- exec_from(ComponentFactory.consumePasswordResetToken(token))
-        credentials <- rawCredentialsByUser(reset.userId)
-        credential <- exec_from(firstOrFailure(credentials, s"credential not found for user: ${reset.userId.print}"))
+        token <- exec_from(requiredString(record, List("token", "resetToken")))
+        next <- exec_from(requiredString(record, List("newPassword", "password")))
+        reset <- exec_from(ComponentFactory._consume_password_reset_token(token))
+        credentials <- _raw_credentials_by_user(reset.userId)
+        credential <- exec_from(_first_or_failure(credentials, s"credential not found for user: ${reset.userId.print}"))
         _ <- _update_credential_fields_direct(
           credential.id,
-          Record.dataAuto("password_hash" -> passwordHash(next))
+          Record.dataAuto("passwordHash" -> _password_hash(next))
         )
-        _ <- updatePasswordChangedAt(reset.userId)
-        _ <- revokeAllAccessSessions(reset.userId)
-        _ <- revokeAllRefreshSessions(reset.userId)
+        _ <- _update_password_changed_at(reset.userId)
+        _ <- _revoke_all_access_sessions(reset.userId)
+        _ <- _revoke_all_refresh_sessions(reset.userId)
       yield
         OperationResponse(Record.data("reset" -> true))
 
-    protected final def enrollTwoFactor(record: Record): ExecUowM[OperationResponse] =
+    protected final def _enroll_two_factor(record: Record): ExecUowM[OperationResponse] =
       for
-        userId <- exec_from(currentUserId(record))
-        userRecord <- rawUserAccountRecord(userId)
+        userId <- exec_from(_current_user_id(record))
+        userRecord <- _raw_user_account_record(userId)
         user <- exec_from(UserAccountEntity.createC(userRecord))
-        _ <- exec_from(ComponentFactory.enrollTwoFactor(user.id, user.email, user.loginName.getOrElse(user.email)))
-        _ <- exec_from(sendEmailNotification(
+        _ <- exec_from(ComponentFactory._enroll_two_factor(user.id, user.email, user.loginName.getOrElse(user.email)))
+        _ <- exec_from(_send_email_notification(
           recipient = user.email,
           subject = "Two-factor authentication enabled",
           body = s"Email verification codes are now required for ${user.loginName.getOrElse(user.email)}.",
@@ -608,13 +607,13 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
     protected final def verifyTwoFactorLogin(record: Record): ExecUowM[OperationResponse] =
       for
-        challengeId <- exec_from(requiredString(record, List("challengeId", "challenge_id")))
-        code <- exec_from(requiredString(record, List("code", "verificationCode", "verification_code")))
-        challenge <- exec_from(ComponentFactory.verifyTwoFactorLoginChallenge(challengeId, code))
-        userRecord <- rawUserAccountRecord(challenge.userId)
+        challengeId <- exec_from(requiredString(record, List("challengeId")))
+        code <- exec_from(requiredString(record, List("code", "verificationCode")))
+        challenge <- exec_from(ComponentFactory._verify_two_factor_login_challenge(challengeId, code))
+        userRecord <- _raw_user_account_record(challenge.userId)
         user <- exec_from(UserAccountEntity.createC(userRecord))
-        credentials <- rawCredentialsByUser(user.id)
-        credential <- exec_from(firstOrFailure(credentials, s"credential not found for user: ${user.id.print}"))
+        credentials <- _raw_credentials_by_user(user.id)
+        credential <- exec_from(_first_or_failure(credentials, s"credential not found for user: ${user.id.print}"))
         response <- _issue_login_response(user, credential.id)
       yield
         response
@@ -622,67 +621,64 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     protected final def requireManagementPrivilege(): Consequence[Unit] =
       ComponentFactory.requireManagementPrivilege(using executionContext)
 
-    private def withDefaultStatus(record: Record, defaultStatus: Option[String]): Record =
-      defaultStatus match
-        case Some(status) if !hasStringValue(record, List("status")) =>
+    private def _with_default_status(record: Record, defaultstatus: Option[String]): Record =
+      defaultstatus match
+        case Some(status) if !_has_string_value(record, List("status")) =>
           record ++ Record.data("status" -> status)
         case _ =>
           record
 
-    private def withRegistrationEmail(record: Record): Consequence[Record] =
-      if hasStringValue(record, List("email")) then
+    private def _with_registration_email(record: Record): Consequence[Record] =
+      if _has_string_value(record, List("email")) then
         Consequence.success(record)
       else
         requiredString(record, List("identifier")).map { identifier =>
           record ++ Record.data("email" -> identifier)
         }
 
-    private def userByEmail(email: String): ExecUowM[UserAccountEntity] =
+    private def _user_by_email(email: String): ExecUowM[UserAccountEntity] =
       for
-        users <- rawUserAccountsByEmail(email)
-        user <- exec_from(firstOrFailure(users, s"user account not found by email: $email"))
+        _users <- _raw_user_accounts_by_email(email)
+        user <- exec_from(_first_or_failure(_users, s"user account not found by email: $email"))
       yield
         user
 
-    private def userByLoginIdentifier(identifier: String): ExecUowM[UserAccountEntity] =
-      if identifier.contains("@") then userByEmail(identifier) else userByLoginName(identifier)
+    private def _user_by_login_identifier(identifier: String): ExecUowM[UserAccountEntity] =
+      if identifier.contains("@") then _user_by_email(identifier) else _user_by_login_name(identifier)
 
-    private def requireEmailAvailable(email: String): ExecUowM[Unit] =
+    private def _require_email_available(email: String): ExecUowM[Unit] =
       for
-        users <- rawUserAccountsByEmail(email)
-        _ <- exec_from(ComponentFactory.requireEmailAvailable(email, users))
+        _users <- _raw_user_accounts_by_email(email)
+        _ <- exec_from(ComponentFactory.requireEmailAvailable(email, _users))
       yield
         ()
 
-    private def rawUserAccountsByLoginName(loginName: String): ExecUowM[Vector[UserAccountEntity]] =
+    private def _raw_user_accounts_by_login_name(loginname: String): ExecUowM[Vector[UserAccountEntity]] =
       for
-        records <- rawRecords(UserAccountQuery.collectionId)
-        users <- exec_from(
+        records <- _raw_records(UserAccountQuery.collectionId)
+        _users <- exec_from(
           records
-            .filter(record =>
-              record.getString("login_name").contains(loginName) ||
-              record.getString("loginName").contains(loginName)
-            )
+            .filter(_.getString("loginName").contains(loginname))
             .traverse(UserAccountEntity.createC)
         )
       yield
-        users
+        _users
 
-    private def userByLoginName(loginName: String): ExecUowM[UserAccountEntity] =
+    private def _user_by_login_name(loginname: String): ExecUowM[UserAccountEntity] =
       for
-        users <- rawUserAccountsByLoginName(loginName)
-        user <- exec_from(firstOrFailure(users, s"user account not found by loginName: $loginName"))
+        _users <- _raw_user_accounts_by_login_name(loginname)
+        user <- exec_from(_first_or_failure(_users, s"user account not found by loginName: $loginname"))
       yield
         user
 
-    private def requireLoginNameAvailable(loginName: String): ExecUowM[Unit] =
+    private def _require_login_name_available(loginname: String): ExecUowM[Unit] =
       for
-        users <- rawUserAccountsByLoginName(loginName)
-        _ <- exec_from(ComponentFactory.requireLoginNameAvailable(loginName, users))
+        _users <- _raw_user_accounts_by_login_name(loginname)
+        _ <- exec_from(ComponentFactory.requireLoginNameAvailable(loginname, _users))
       yield
         ()
 
-    private def sendEmailNotification(
+    private def _send_email_notification(
       recipient: String,
       subject: String,
       body: String,
@@ -707,25 +703,25 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       credentialId: EntityId
     ): ExecUowM[OperationResponse] =
       for
-        refreshIssued <- issueRefreshSession(
+        refreshIssued <- _issue_refresh_session(
           user.id,
           None,
-          clientIdFromSecurityContext(),
-          deviceInfoFromSecurityContext(),
-          ipAddressFromSecurityContext(),
-          userAgentFromSecurityContext()
+          _client_id_from_security_context(),
+          _device_info_from_security_context(),
+          _ip_address_from_security_context(),
+          _user_agent_from_security_context()
         )
-        issued <- issueAccessSession(
+        issued <- _issue_access_session(
           user.id,
           None,
           Some(refreshIssued.sessionId),
-          clientIdFromSecurityContext(),
-          deviceInfoFromSecurityContext(),
-          ipAddressFromSecurityContext(),
-          userAgentFromSecurityContext()
+          _client_id_from_security_context(),
+          _device_info_from_security_context(),
+          _ip_address_from_security_context(),
+          _user_agent_from_security_context()
         )
-        _ <- updateLastLoginAt(user.id)
-        _ <- exec_from(addLoggedInUser(user))
+        _ <- _update_last_login_at(user.id)
+        _ <- exec_from(_add_logged_in_user(user))
       yield
         OperationResponse(
           Record.data(
@@ -740,32 +736,32 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         )
 
     private def _public_user_record(user: UserAccountEntity): Record =
-      user.toRecord() ++ Record.data("handle" -> user.loginName.orNull)
+      ComponentFactory.normalizeDataStoreRecord(user.toRecord()) ++ Record.data("handle" -> user.loginName.orNull)
 
     protected final def lookupUserByLoginName(record: Record): ExecUowM[OperationResponse] =
       for
-        loginName <- exec_from(requiredString(record, List("loginName", "login_name")))
-        user <- userByLoginName(loginName)
+        loginName <- exec_from(requiredString(record, List("loginName")))
+        user <- _user_by_login_name(loginName)
         _ <- exec_from(ComponentFactory.requireAuthenticatable(user.status))
       yield
         OperationResponse(_public_user_record(user))
 
-    private def credentialsForUser(userId: EntityId): ExecUowM[Vector[CredentialEntity]] =
+    private def _credentials_for_user(userid: EntityId): ExecUowM[Vector[CredentialEntity]] =
       val query = CredentialQuery(
         id = Condition.any[EntityId],
         name = Condition.any[Name],
         title = Condition.any[String],
-        userAccountId = Condition.is(userId),
+        userAccountId = Condition.is(userid),
         passwordHash = Condition.any[String]
       )
       entity_search[CredentialEntity](CredentialQuery.collectionId, Query(query)).map(_.data)
 
-    private def accessSessionsForUser(userId: EntityId): ExecUowM[Vector[AccessSessionEntity]] =
+    private def _access_sessions_for_user(userid: EntityId): ExecUowM[Vector[AccessSessionEntity]] =
       val query = AccessSessionQuery(
         id = Condition.any[EntityId],
         name = Condition.any[Name],
         title = Condition.any[String],
-        userAccountId = Condition.is(userId),
+        userAccountId = Condition.is(userid),
         refreshSessionId = Condition.any[String],
         tokenHash = Condition.any[String],
         issuedAt = Condition.any[Instant],
@@ -779,12 +775,12 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       )
       entity_search[AccessSessionEntity](AccessSessionQuery.collectionId, Query(query)).map(_.data)
 
-    private def refreshSessionsForUser(userId: EntityId): ExecUowM[Vector[RefreshSessionEntity]] =
+    private def _refresh_sessions_for_user(userid: EntityId): ExecUowM[Vector[RefreshSessionEntity]] =
       val query = RefreshSessionQuery(
         id = Condition.any[EntityId],
         name = Condition.any[Name],
         title = Condition.any[String],
-        userAccountId = Condition.is(userId),
+        userAccountId = Condition.is(userid),
         successorSessionId = Condition.any[String],
         tokenHash = Condition.any[String],
         issuedAt = Condition.any[Instant],
@@ -798,163 +794,166 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       )
       entity_search[RefreshSessionEntity](RefreshSessionQuery.collectionId, Query(query)).map(_.data)
 
-    private def credentialByUserAndPassword(
+    private def _credential_by_user_and_password(
       userId: EntityId,
       password: String
     ): ExecUowM[CredentialEntity] =
       for
-        credentials <- rawCredentialsByUserAndPassword(userId, passwordHash(password))
-        credential <- exec_from(firstOrFailure(credentials, "invalid credentials"))
+        credentials <- _raw_credentials_by_user_and_password(userId, _password_hash(password))
+        credential <- exec_from(_first_or_failure(credentials, "invalid credentials"))
       yield
         credential
 
-    private def rawUserAccountsByEmail(email: String): ExecUowM[Vector[UserAccountEntity]] =
+    private def _raw_user_accounts_by_email(email: String): ExecUowM[Vector[UserAccountEntity]] =
       for
-        records <- rawRecords(UserAccountQuery.collectionId)
-        users <- exec_from(
+        records <- _raw_records(UserAccountQuery.collectionId)
+        _users <- exec_from(
           records
             .filter(_.getString("email").contains(email))
             .traverse(UserAccountEntity.createC)
         )
       yield
-        users
+        _users
 
-    private def rawCredentialsByUser(
+    private def _raw_credentials_by_user(
       userId: EntityId
     ): ExecUowM[Vector[CredentialEntity]] =
       for
-        records <- rawRecords(CredentialQuery.collectionId)
+        records <- _raw_records(CredentialQuery.collectionId)
         credentials <- exec_from(
           records
-            .filter(_.getString("user_account_id").contains(userId.print))
+            .filter(_.getString("userAccountId").contains(userId.print))
             .traverse(CredentialEntity.createC)
         )
       yield
         credentials
 
-    private def rawCredentialsByUserAndPassword(
+    private def _raw_credentials_by_user_and_password(
       userId: EntityId,
       hashedPassword: String
     ): ExecUowM[Vector[CredentialEntity]] =
       for
-        records <- rawRecords(CredentialQuery.collectionId)
+        records <- _raw_records(CredentialQuery.collectionId)
         credentials <- exec_from(
           records
             .filter(r =>
-              r.getString("user_account_id").contains(userId.print) &&
-                r.getString("password_hash").contains(hashedPassword)
+              r.getString("userAccountId").contains(userId.print) &&
+                r.getString("passwordHash").contains(hashedPassword)
             )
             .traverse(CredentialEntity.createC)
         )
       yield
         credentials
 
-    private def rawAccessSessionsByTokenHash(
+    private def _raw_access_sessions_by_token_hash(
       hashedToken: String
     ): ExecUowM[Vector[AccessSessionEntity]] =
       for
-        records <- rawRecords(AccessSessionQuery.collectionId)
+        records <- _raw_records(AccessSessionQuery.collectionId)
         sessions <- exec_from(
           records
-            .filter(_.getString("token_hash").contains(hashedToken))
+            .filter(_.getString("tokenHash").contains(hashedToken))
             .traverse(AccessSessionEntity.createC)
         )
       yield
         sessions
 
-    private def rawRefreshSessionsByTokenHash(
+    private def _raw_refresh_sessions_by_token_hash(
       hashedToken: String
     ): ExecUowM[Vector[RefreshSessionEntity]] =
       for
-        records <- rawRecords(RefreshSessionQuery.collectionId)
+        records <- _raw_records(RefreshSessionQuery.collectionId)
         sessions <- exec_from(
           records
-            .filter(_.getString("token_hash").contains(hashedToken))
+            .filter(_.getString("tokenHash").contains(hashedToken))
             .traverse(RefreshSessionEntity.createC)
         )
       yield
         sessions
 
-    private def rawAccessSessionsForUser(
+    private def _raw_access_sessions_for_user(
       userId: EntityId
     ): ExecUowM[Vector[AccessSessionEntity]] =
       for
-        records <- rawRecords(AccessSessionQuery.collectionId)
+        records <- _raw_records(AccessSessionQuery.collectionId)
         sessions <- exec_from(
           records
-            .filter(_.getString("user_account_id").contains(userId.print))
+            .filter(_.getString("userAccountId").contains(userId.print))
             .traverse(AccessSessionEntity.createC)
         )
       yield
         sessions
 
-    private def rawRefreshSessionsForUser(
+    private def _raw_refresh_sessions_for_user(
       userId: EntityId
     ): ExecUowM[Vector[RefreshSessionEntity]] =
       for
-        records <- rawRecords(RefreshSessionQuery.collectionId)
+        records <- _raw_records(RefreshSessionQuery.collectionId)
         sessions <- exec_from(
           records
-            .filter(_.getString("user_account_id").contains(userId.print))
+            .filter(_.getString("userAccountId").contains(userId.print))
             .traverse(RefreshSessionEntity.createC)
         )
       yield
         sessions
 
-    private def rawUserAccountRecord(userId: EntityId): ExecUowM[Record] =
+    private def _raw_user_account_record(userid: EntityId): ExecUowM[Record] =
       exec_from {
         for
           cid <- executionContext.entityStoreSpace.dataStoreCollection(UserAccountQuery.collectionId)
           ds <- executionContext.dataStoreSpace.dataStore(cid)
           recordOption <- ds.load(
             cid,
-            org.goldenport.cncf.datastore.DataStore.EntryId(userId)
+            org.goldenport.cncf.datastore.DataStore.EntryId(userid)
           )(using executionContext)
           record <- recordOption match
             case Some(x) => Consequence.success(x)
-            case None => Consequence.entityNotFound(s"User account not found: ${userId.print}")
+            case None => Consequence.entityNotFound(s"User account not found: ${userid.print}")
         yield
-          record
+          _normalize_data_store_record(record)
       }
 
-    private def rawRecords(collectionId: org.simplemodeling.model.datatype.EntityCollectionId): ExecUowM[Vector[Record]] =
+    private def _raw_records(collectionid: org.simplemodeling.model.datatype.EntityCollectionId): ExecUowM[Vector[Record]] =
       exec_from {
         for
-          cid <- executionContext.entityStoreSpace.dataStoreCollection(collectionId)
+          cid <- executionContext.entityStoreSpace.dataStoreCollection(collectionid)
           result <- executionContext.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))(using executionContext)
         yield
-          result.records.toVector
+          result.records.toVector.map(_normalize_data_store_record)
       }
+
+    private def _normalize_data_store_record(record: Record): Record =
+      ComponentFactory.normalizeDataStoreRecord(record)
 
     private def _entity_id_of(record: Record): Consequence[EntityId] =
       record
         .getAsC[EntityId]("id")
         .flatMap(x => Consequence.successOrPropertyNotFound("id", x))
 
-    private def deleteCredentials(credentials: Vector[CredentialEntity]): ExecUowM[Unit] =
+    private def _delete_credentials(credentials: Vector[CredentialEntity]): ExecUowM[Unit] =
       credentials.foldLeft(exec_pure(())) { (z, credential) =>
         z.flatMap(_ => entity_delete(credential.id))
       }
 
-    private def revokeAllAccessSessions(userId: EntityId): ExecUowM[Unit] =
+    private def _revoke_all_access_sessions(userid: EntityId): ExecUowM[Unit] =
       for
-        sessions <- rawAccessSessionsForUser(userId)
+        sessions <- _raw_access_sessions_for_user(userid)
         _ <- sessions.foldLeft(exec_pure(())) { (z, session) =>
-          z.flatMap(_ => revokeAccessSession(session.id))
+          z.flatMap(_ => _revoke_access_session(session.id))
         }
       yield
         ()
 
-    private def revokeAllRefreshSessions(userId: EntityId): ExecUowM[Unit] =
+    private def _revoke_all_refresh_sessions(userid: EntityId): ExecUowM[Unit] =
       for
-        sessions <- rawRefreshSessionsForUser(userId)
+        sessions <- _raw_refresh_sessions_for_user(userid)
         _ <- sessions.foldLeft(exec_pure(())) { (z, session) =>
-          z.flatMap(_ => revokeRefreshSession(session.id))
+          z.flatMap(_ => _revoke_refresh_session(session.id))
         }
       yield
         ()
 
-    private def issueAccessSession(
+    private def _issue_access_session(
       userId: EntityId,
       requestedToken: Option[String],
       refreshSessionId: Option[EntityId],
@@ -969,7 +968,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         sessionRecord = Record.dataAuto(
           "userAccountId" -> userId,
           "refreshSessionId" -> refreshSessionId.map(_.print),
-          "tokenHash" -> tokenHash(rawToken),
+          "tokenHash" -> _token_hash(rawToken),
           "issuedAt" -> now.toString,
           "expiresAt" -> now.plusSeconds(ComponentFactory.AccessSessionTtlSeconds.toLong).toString,
           "clientId" -> clientId,
@@ -983,7 +982,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       yield
         ComponentFactory.IssuedAccessSession(created.id, rawToken)
 
-    private def issueRefreshSession(
+    private def _issue_refresh_session(
       userId: EntityId,
       requestedToken: Option[String],
       clientId: Option[String],
@@ -997,7 +996,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         rawToken <- exec_pure(requestedToken.filter(_.trim.nonEmpty).getOrElse(ComponentFactory.generateToken()))
         sessionRecord = Record.dataAuto(
           "userAccountId" -> userId,
-          "tokenHash" -> tokenHash(rawToken),
+          "tokenHash" -> _token_hash(rawToken),
           "issuedAt" -> now.toString,
           "expiresAt" -> now.plusSeconds(ComponentFactory.RefreshSessionTtlSeconds.toLong).toString,
           "clientId" -> clientId,
@@ -1009,18 +1008,18 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         session = session0.withResourceAttributes(ResourceAttributes(activationStatus = ActivationStatus.Active))
         created <- entity_create(session)
         _ <- predecessor match
-          case Some(previousId) => updateRefreshSuccessor(previousId, created.id)
+          case Some(previousId) => _update_refresh_successor(previousId, created.id)
           case None => exec_pure(())
       yield
         ComponentFactory.IssuedRefreshSession(created.id, rawToken)
 
-    private def requireCurrentAccessSession(userId: EntityId): ExecUowM[AccessSessionEntity] =
-      currentAccessToken() match
+    private def _require_current_access_session(userid: EntityId): ExecUowM[AccessSessionEntity] =
+      _current_access_token() match
         case Some(token) =>
           for
-            sessions <- rawAccessSessionsByTokenHash(tokenHash(token))
+            sessions <- _raw_access_sessions_by_token_hash(_token_hash(token))
             session <- exec_from(
-              sessions.find(session => session.userAccountId == userId && ComponentFactory._is_active_access_session(session)) match
+              sessions.find(session => session.userAccountId == userid && ComponentFactory._is_active_access_session(session)) match
                 case Some(x) => Consequence.success(x)
                 case None => Consequence.securityAuthenticationRequired("No current access session matches the target account.")
             )
@@ -1029,94 +1028,94 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         case None =>
           exec_from(Consequence.securityAuthenticationRequired("No current access token is available for logout."))
 
-    private def revokeLinkedRefreshSession(accessSession: AccessSessionEntity): ExecUowM[Unit] =
-      accessSession.refreshSessionId match
+    private def _revoke_linked_refresh_session(accesssession: AccessSessionEntity): ExecUowM[Unit] =
+      accesssession.refreshSessionId match
         case Some(refreshId) =>
           for
             id <- exec_from(EntityId.parse(refreshId))
-            _ <- revokeRefreshSession(id)
+            _ <- _revoke_refresh_session(id)
           yield
             ()
         case None =>
-          currentRefreshToken() match
+          _current_refresh_token() match
             case Some(token) =>
               for
-                sessions <- rawRefreshSessionsByTokenHash(tokenHash(token))
-                _ <- sessions.find(_.userAccountId == accessSession.userAccountId) match
-                  case Some(session) => revokeRefreshSession(session.id)
+                sessions <- _raw_refresh_sessions_by_token_hash(_token_hash(token))
+                _ <- sessions.find(_.userAccountId == accesssession.userAccountId) match
+                  case Some(session) => _revoke_refresh_session(session.id)
                   case None => exec_pure(())
               yield
                 ()
             case None =>
               exec_pure(())
 
-    private def revokeAccessSession(sessionId: EntityId): ExecUowM[Unit] =
+    private def _revoke_access_session(sessionid: EntityId): ExecUowM[Unit] =
       for
         now <- exec_pure(Instant.now)
         _ <- _update_access_session_fields_direct(
-          sessionId,
+          sessionid,
           Record.dataAuto(
-            "revoked_at" -> now,
-            "last_accessed_at" -> now
+            "revokedAt" -> now,
+            "lastAccessedAt" -> now
           )
         )
       yield
         ()
 
-    private def revokeRefreshSession(sessionId: EntityId): ExecUowM[Unit] =
+    private def _revoke_refresh_session(sessionid: EntityId): ExecUowM[Unit] =
       for
         now <- exec_pure(Instant.now)
         _ <- _update_refresh_session_fields_direct(
-          sessionId,
-          Record.dataAuto("revoked_at" -> now)
+          sessionid,
+          Record.dataAuto("revokedAt" -> now)
         )
       yield
         ()
 
-    private def revokeRefreshSessionAsRotated(sessionId: EntityId): ExecUowM[Unit] =
+    private def _revoke_refresh_session_as_rotated(sessionid: EntityId): ExecUowM[Unit] =
       for
         now <- exec_pure(Instant.now)
         _ <- _update_refresh_session_fields_direct(
-          sessionId,
+          sessionid,
           Record.dataAuto(
-            "revoked_at" -> now,
-            "rotated_at" -> now
+            "revokedAt" -> now,
+            "rotatedAt" -> now
           )
         )
       yield
         ()
 
-    private def updateRefreshSuccessor(previousId: EntityId, successorId: EntityId): ExecUowM[Unit] =
+    private def _update_refresh_successor(previousid: EntityId, successorid: EntityId): ExecUowM[Unit] =
       for
         _ <- _update_refresh_session_fields_direct(
-          previousId,
-          Record.dataAuto("successor_session_id" -> successorId.print)
+          previousid,
+          Record.dataAuto("successorSessionId" -> successorid.print)
         )
       yield
         ()
 
-    private def requireUserSession(userId: EntityId): ExecUowM[Unit] =
-      exec_from(ComponentFactory.requireLoggedIn(userId)(using executionContext))
+    private def _require_user_session(userid: EntityId): ExecUowM[Unit] =
+      exec_from(ComponentFactory.requireLoggedIn(userid)(using executionContext))
 
-    private def activeRefreshSessionByToken(refreshToken: String): ExecUowM[RefreshSessionEntity] =
+    private def _active_refresh_session_by_token(refreshtoken: String): ExecUowM[RefreshSessionEntity] =
       for
-        sessions <- rawRefreshSessionsByTokenHash(tokenHash(refreshToken))
+        sessions <- _raw_refresh_sessions_by_token_hash(_token_hash(refreshtoken))
         session <- sessions.find(ComponentFactory.isActiveRefreshSession) match
           case Some(x) =>
             exec_pure(x)
           case None =>
-            _handleRefreshTokenReuseOrFailure(sessions)
+            _handle_refresh_token_reuse_or_failure(sessions)
       yield
         session
 
-    private def _handleRefreshTokenReuseOrFailure(
+    private def _handle_refresh_token_reuse_or_failure(
       sessions: Vector[RefreshSessionEntity]
     ): ExecUowM[RefreshSessionEntity] =
       if (sessions.exists(ComponentFactory._is_reused_refresh_session))
         for
           _ <- sessions.headOption match
             case Some(session) =>
-              revokeAllAccessSessions(session.userAccountId).flatMap(_ => revokeAllRefreshSessions(session.userAccountId))
+              _revoke_all_access_sessions(session.userAccountId).flatMap(_ => _revoke_all_refresh_sessions(session.userAccountId))
             case None =>
               exec_pure(())
           session <- exec_from(Consequence.securityPermissionDenied[RefreshSessionEntity]("refresh token reuse detected"))
@@ -1125,40 +1124,40 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       else
         exec_from(Consequence.securityPermissionDenied("invalid refresh token"))
 
-    private def updateLastLoginAt(userId: EntityId): ExecUowM[Unit] =
+    private def _update_last_login_at(userid: EntityId): ExecUowM[Unit] =
       for
         _ <- _update_user_account_fields_direct(
-          userId,
-          Record.dataAuto("last_login_at" -> Instant.now)
+          userid,
+          Record.dataAuto("lastLoginAt" -> Instant.now)
         )
       yield
         ()
 
-    private def updatePasswordChangedAt(userId: EntityId): ExecUowM[Unit] =
+    private def _update_password_changed_at(userid: EntityId): ExecUowM[Unit] =
       for
         _ <- _update_user_account_fields_direct(
-          userId,
-          Record.dataAuto("password_changed_at" -> Instant.now)
+          userid,
+          Record.dataAuto("passwordChangedAt" -> Instant.now)
         )
       yield
         ()
 
-    private def updateEmailVerifiedAt(userId: EntityId): ExecUowM[Unit] =
+    private def _update_email_verified_at(userid: EntityId): ExecUowM[Unit] =
       for
         _ <- _update_user_account_fields_direct(
-          userId,
-          Record.dataAuto("email_verified_at" -> Instant.now)
+          userid,
+          Record.dataAuto("emailVerifiedAt" -> Instant.now)
         )
       yield
         ()
 
-    private def updatePhoneVerification(userId: EntityId, phoneNumber: String): ExecUowM[Unit] =
+    private def _update_phone_verification(userid: EntityId, phonenumber: String): ExecUowM[Unit] =
       for
         _ <- _update_user_account_fields_direct(
-          userId,
+          userid,
           Record.dataAuto(
-            "phone_number" -> phoneNumber,
-            "phone_verified_at" -> Instant.now
+            "phoneNumber" -> phonenumber,
+            "phoneVerifiedAt" -> Instant.now
           )
         )
       yield
@@ -1191,7 +1190,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           _ <- ds.update(
             cid,
             org.goldenport.cncf.datastore.DataStore.EntryId(userId),
-            changes
+            ComponentFactory._data_store_update_record(changes)
           )(using executionContext)
         yield
           ()
@@ -1208,7 +1207,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           _ <- ds.update(
             cid,
             org.goldenport.cncf.datastore.DataStore.EntryId(sessionId),
-            changes
+            ComponentFactory._data_store_update_record(changes)
           )(using executionContext)
         yield
           ()
@@ -1225,7 +1224,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           _ <- ds.update(
             cid,
             org.goldenport.cncf.datastore.DataStore.EntryId(sessionId),
-            changes
+            ComponentFactory._data_store_update_record(changes)
           )(using executionContext)
         yield
           ()
@@ -1242,48 +1241,54 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
           _ <- ds.update(
             cid,
             org.goldenport.cncf.datastore.DataStore.EntryId(credentialId),
-            changes
+            ComponentFactory._data_store_update_record(changes)
           )(using executionContext)
         yield
           ()
       }
 
-    private def passwordHash(password: String): String =
-      tokenHash(password)
+    private def _password_hash(password: String): String =
+      _token_hash(password)
 
-    private def tokenHash(token: String): String =
+    private def _token_hash(token: String): String =
       val digest = MessageDigest.getInstance("SHA-256")
       val bytes = digest.digest(token.getBytes(StandardCharsets.UTF_8))
       bytes.map(b => f"${b & 0xff}%02x").mkString
 
-    private def currentAccessToken(): Option[String] =
-      executionContext.security.principal.attributes.get("access_token").filter(_.trim.nonEmpty)
+    private def _current_access_token(): Option[String] =
+      executionContext.security.principal.attributes.get("accessToken")
+        .filter(_.trim.nonEmpty)
 
-    private def currentRefreshToken(): Option[String] =
-      executionContext.security.principal.attributes.get("refresh_token").filter(_.trim.nonEmpty)
+    private def _current_refresh_token(): Option[String] =
+      executionContext.security.principal.attributes.get("refreshToken")
+        .filter(_.trim.nonEmpty)
 
-    private def accessTokenFromSecurityContext(): Option[String] =
-      currentAccessToken()
+    private def _access_token_from_security_context(): Option[String] =
+      _current_access_token()
 
-    private def refreshTokenFromSecurityContext(): Option[String] =
-      currentRefreshToken()
+    private def _refresh_token_from_security_context(): Option[String] =
+      _current_refresh_token()
 
-    private def clientIdFromSecurityContext(): Option[String] =
-      executionContext.security.principal.attributes.get("client_id").filter(_.trim.nonEmpty)
+    private def _client_id_from_security_context(): Option[String] =
+      executionContext.security.principal.attributes.get("clientId")
+        .filter(_.trim.nonEmpty)
 
-    private def deviceInfoFromSecurityContext(): Option[String] =
-      executionContext.security.principal.attributes.get("device_info").filter(_.trim.nonEmpty)
+    private def _device_info_from_security_context(): Option[String] =
+      executionContext.security.principal.attributes.get("deviceInfo")
+        .filter(_.trim.nonEmpty)
 
-    private def ipAddressFromSecurityContext(): Option[String] =
-      executionContext.security.principal.attributes.get("ip_address").filter(_.trim.nonEmpty)
+    private def _ip_address_from_security_context(): Option[String] =
+      executionContext.security.principal.attributes.get("ipAddress")
+        .filter(_.trim.nonEmpty)
 
-    private def userAgentFromSecurityContext(): Option[String] =
-      executionContext.security.principal.attributes.get("user_agent").filter(_.trim.nonEmpty)
+    private def _user_agent_from_security_context(): Option[String] =
+      executionContext.security.principal.attributes.get("userAgent")
+        .filter(_.trim.nonEmpty)
 
-    private def addLoggedInUserForUserId(userId: EntityId): Consequence[Unit] =
-      ComponentFactory.addLoggedInUserForTest(userId)(using executionContext)
+    private def _add_logged_in_user_for_user_id(userid: EntityId): Consequence[Unit] =
+      ComponentFactory.addLoggedInUserForTest(userid)(using executionContext)
 
-    private def addLoggedInUser(user: UserAccountEntity): Consequence[Unit] =
+    private def _add_logged_in_user(user: UserAccountEntity): Consequence[Unit] =
       ComponentFactory.LoginWorkingSet.upsert(user)
       component
         .flatMap(_.entitySpace.entityOption[Any](UserAccountQuery.collectionId.name))
@@ -1291,56 +1296,57 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         .foreach(_.put(user))
       Consequence.unit
 
-    private def removeLoggedInUser(userId: EntityId): Consequence[Unit] =
-      ComponentFactory.LoginWorkingSet.remove(userId)
+    private def _remove_logged_in_user(userid: EntityId): Consequence[Unit] =
+      ComponentFactory.LoginWorkingSet.remove(userid)
       component
         .flatMap(_.entitySpace.entityOption[Any](UserAccountQuery.collectionId.name))
         .flatMap(_.storage.memoryRealm)
-        .foreach(_.remove(userId))
+        .foreach(_.remove(userid))
       Consequence.unit
 
     protected final def requiredString(record: Record, keys: List[String]): Consequence[String] =
-      recordGetAsC[String](record, keys).flatMap(v => Consequence.successOrPropertyNotFound(keys.head, v))
+      _record_get_as_c[String](record, keys).flatMap(v => Consequence.successOrPropertyNotFound(keys.head, v))
 
-    private def requiredEntityId(record: Record, keys: List[String]): Consequence[EntityId] =
-      recordGetAsC[EntityId](record, keys).flatMap(v => Consequence.successOrPropertyNotFound(keys.head, v))
+    private def _required_entity_id(record: Record, keys: List[String]): Consequence[EntityId] =
+      _record_get_as_c[EntityId](record, keys).flatMap(v => Consequence.successOrPropertyNotFound(keys.head, v))
 
-    private def optionalString(record: Record, keys: List[String]): Consequence[Option[String]] =
-      recordGetAsC[String](record, keys)
+    private def _optional_string(record: Record, keys: List[String]): Consequence[Option[String]] =
+      _record_get_as_c[String](record, keys)
 
-    private def optionalInt(record: Record, keys: List[String]): Consequence[Option[Int]] =
-      recordGetAsC[Int](record, keys)
+    private def _optional_int(record: Record, keys: List[String]): Consequence[Option[Int]] =
+      _record_get_as_c[Int](record, keys)
 
-    private def requiredStatus(record: Record): Consequence[UserAccountStatus] =
-      recordGetAsC[UserAccountStatus](record, List("status")).flatMap(v => Consequence.successOrPropertyNotFound("status", v))
+    private def _required_status(record: Record): Consequence[UserAccountStatus] =
+      _record_get_as_c[UserAccountStatus](record, List("status")).flatMap(v => Consequence.successOrPropertyNotFound("status", v))
 
-    private def optionalStatus(record: Record): Consequence[Option[UserAccountStatus]] =
-      recordGetAsC[UserAccountStatus](record, List("status"))
+    private def _optional_status(record: Record): Consequence[Option[UserAccountStatus]] =
+      _record_get_as_c[UserAccountStatus](record, List("status"))
 
-    private def currentUserId(record: Record): Consequence[EntityId] =
-      recordGetAsC[EntityId](record, List("userAccountId", "user_account_id", "id")).flatMap {
+    private def _current_user_id(record: Record): Consequence[EntityId] =
+      _record_get_as_c[EntityId](record, List("userAccountId", "id")).flatMap {
         case Some(id) => ComponentFactory.currentLoggedInUserId(id)(using executionContext)
         case None => ComponentFactory.currentLoggedInUserId()(using executionContext)
       }
 
-    private def hasStringValue(record: Record, keys: List[String]): Boolean =
-      recordGetAsC[String](record, keys) match
+    private def _has_string_value(record: Record, keys: List[String]): Boolean =
+      _record_get_as_c[String](record, keys) match
         case Consequence.Success(Some(_)) => true
         case _ => false
 
-    private def firstOrFailure[A](xs: Vector[A], message: String): Consequence[A] =
+    private def _first_or_failure[A](xs: Vector[A], message: String): Consequence[A] =
       xs.headOption match
         case Some(s) => Consequence.success(s)
         case None => Consequence.argumentInvalid(message)
 
-    private def recordGetAsC[A](
+    private def _record_get_as_c[A](
       record: Record,
       keys: List[String]
     )(using vr: org.goldenport.convert.ValueReader[A]): Consequence[Option[A]] =
+      val normalized = ComponentFactory.normalizeDataStoreRecord(record)
       keys.foldLeft(Consequence.success(Option.empty[A])) { (z, key) =>
         z.flatMap {
           case s @ Some(_) => Consequence.success(s)
-          case None => record.getAsC[A](key)
+          case None => normalized.getAsC[A](key)
         }
       }
 
@@ -1364,7 +1370,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
   ) extends UserService.PromoteToFormalRegistrationActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
       for
-        proofToken <- exec_from(requiredString(action.record, List("proofToken", "proof_token")))
+        proofToken <- exec_from(requiredString(action.record, List("proofToken")))
         _ <- exec_from(ComponentFactory.requirePromotionProofToken(proofToken))
         response <- updateUserStatus(action.record, Some("formal"))
       yield
@@ -1467,7 +1473,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     override val action: UserService.UserEnrollTwoFactor
   ) extends UserService.EnrollTwoFactorActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
-      enrollTwoFactor(action.record)
+      _enroll_two_factor(action.record)
 
   private final case class VerifyTwoFactorLoginActionCallImpl(
     core: ActionCall.Core,
@@ -1550,8 +1556,8 @@ object ComponentFactory:
     consumedAt: Option[Instant] = None
   )
 
-  private val PasswordResetTtlSeconds: Int = 60 * 30
-  private val TwoFactorChallengeTtlSeconds: Int = 60 * 10
+  private val _password_reset_ttl_seconds: Int = 60 * 30
+  private val _two_factor_challenge_ttl_seconds: Int = 60 * 10
   private val _password_reset_tokens = TrieMap.empty[String, PasswordResetToken]
   private val _two_factor_enrollments = TrieMap.empty[String, String]
   private val _two_factor_login_challenges = TrieMap.empty[String, TwoFactorChallenge]
@@ -1559,12 +1565,83 @@ object ComponentFactory:
   val AccessSessionTtlSeconds: Int = 60 * 60 * 8
   val RefreshSessionTtlSeconds: Int = 60 * 60 * 24 * 14
 
+  def normalizeDataStoreRecord(record: Record): Record =
+    _normalize_record_keys(record).TAKE
+
+  private def _data_store_update_record(record: Record): Record =
+    Record(record.fields.map { field =>
+      field.copy(key = _storage_property_name(field.key))
+    })
+
+  private def _normalize_record_keys(record: Record): Consequence[Record] = {
+    val normalized = record.fields.map { field =>
+      _canonical_property_name(field.key) -> field
+    }
+    val collisions = normalized
+      .groupBy(_._1)
+      .collect {
+        case (key, values) if values.lengthCompare(1) > 0 =>
+          key -> values.map(_._2.key).distinct
+      }
+      .filter(_._2.lengthCompare(1) > 0)
+    if (collisions.nonEmpty) {
+      val message = collisions.toVector.sortBy(_._1).map {
+        case (key, aliases) => s"$key: ${aliases.mkString(", ")}"
+      }.mkString("; ")
+      Consequence.argumentInvalid(s"Duplicate property aliases after canonical naming: $message")
+    } else {
+      Consequence.success(Record(normalized.map {
+        case (key, field) => field.copy(key = key)
+      }))
+    }
+  }
+
+  private def _canonical_property_name(name: String): String = {
+    val trimmed = name.trim
+    if (trimmed.isEmpty)
+      trimmed
+    else if (!trimmed.exists(c => c == '_' || c == '-' || c == '.' || c.isWhitespace))
+      trimmed
+    else {
+      val parts = trimmed
+        .split("[_\\-\\.\\s]+")
+        .toVector
+        .filter(_.nonEmpty)
+        .map(_.toLowerCase(java.util.Locale.ROOT))
+      parts.headOption match {
+        case None => ""
+        case Some(head) =>
+          head + parts.tail.map { x =>
+            if (x.isEmpty) x else s"${x.head.toUpper}${x.tail}"
+          }.mkString
+      }
+    }
+  }
+
+  private def _storage_property_name(name: String): String = {
+    val canonical = _canonical_property_name(name)
+    val b = new StringBuilder(canonical.length + 8)
+    var i = 0
+    while (i < canonical.length) {
+      val c = canonical.charAt(i)
+      if (c.isUpper) {
+        if (b.nonEmpty)
+          b.append('_')
+        b.append(c.toLower)
+      } else {
+        b.append(c)
+      }
+      i += 1
+    }
+    b.result()
+  }
+
   def authorizeOwnerOrManagerUserAccount(
     record: Record,
     access: CmlOperationAccess
   )(using ctx: ExecutionContext): Consequence[Unit] =
     for
-      userId <- _resolveTargetUserId(record, access)
+      userId <- _resolve_target_user_id(record, access)
       _ <- _authorize_owner_or_manager(userId)
     yield
       ()
@@ -1593,21 +1670,22 @@ object ComponentFactory:
       case _ =>
         authorizeOwnerOrManagerUserAccountEntity(record, entityName)
 
-  private def _requiredEntityId(
+  private def _required_entity_id(
     record: Record,
     keys: Seq[String]
   ): Consequence[EntityId] =
-    keys.iterator.map(record.getString).collectFirst {
+    val normalized = normalizeDataStoreRecord(record)
+    keys.iterator.map(normalized.getString).collectFirst {
       case Some(s) => summon[org.goldenport.convert.ValueReader[EntityId]].readC(s)
     }.getOrElse {
       Consequence.argumentMissingInput(keys)
     }
 
-  private def _resolveTargetUserId(
+  private def _resolve_target_user_id(
     record: Record,
     access: CmlOperationAccess
   )(using ctx: ExecutionContext): Consequence[EntityId] =
-    _requiredEntityId(record, access.target.toList ++ List("userAccountId", "user_account_id", "id")) match
+    _required_entity_id(record, access.target.toList ++ List("userAccountId", "id")) match
       case s @ Consequence.Success(_) => s
       case _ => currentLoggedInUserId()
 
@@ -1710,7 +1788,8 @@ object ComponentFactory:
       Consequence.argumentInvalid("Promotion proof token must not be empty.")
 
   def requireEmailVerificationPending(user: Record): Consequence[Unit] =
-    user.getString("email_verified_at") match
+    val normalized = normalizeDataStoreRecord(user)
+    normalized.getString("emailVerifiedAt") match
       case Some(v) if v.trim.nonEmpty => Consequence.stateConflict("Current account email is already verified.")
       case _ => Consequence.unit
 
@@ -1718,33 +1797,34 @@ object ComponentFactory:
     user: Record,
     requestedPhoneNumber: String
   ): Consequence[Unit] =
-    user.getString("phone_number") match
+    val normalized = normalizeDataStoreRecord(user)
+    normalized.getString("phoneNumber") match
       case None | Some("") =>
         Consequence.stateConflict("Current account does not have an SMS contact to verify.")
       case Some(phone) if phone != requestedPhoneNumber =>
         Consequence.argumentInvalid(s"Requested phone number does not match the current account SMS contact: $requestedPhoneNumber")
       case Some(_) =>
-        user.getString("phone_verified_at") match
+        normalized.getString("phoneVerifiedAt") match
           case Some(v) if v.trim.nonEmpty => Consequence.stateConflict("Current account phone number is already verified.")
           case _ => Consequence.unit
 
   def requireEmailAvailable(
     email: String,
-    users: Vector[UserAccountEntity]
+    _users: Vector[UserAccountEntity]
   ): Consequence[Unit] =
-    if (users.isEmpty)
+    if (_users.isEmpty)
       Consequence.unit
     else
       Consequence.stateConflict(s"User account email is already registered: $email")
 
   def requireLoginNameAvailable(
-    loginName: String,
-    users: Vector[UserAccountEntity]
+    loginname: String,
+    _users: Vector[UserAccountEntity]
   ): Consequence[Unit] =
-    if (users.isEmpty)
+    if (_users.isEmpty)
       Consequence.unit
     else
-      Consequence.stateConflict(s"User account loginName is already registered: $loginName")
+      Consequence.stateConflict(s"User account loginName is already registered: $loginname")
 
   def requireLoggedIn(id: EntityId)(using ExecutionContext): Consequence[Unit] =
     currentLoggedInUserId(id).map(_ => ())
@@ -1756,7 +1836,7 @@ object ComponentFactory:
     _current_logged_in_user_id_from_session_id()
       .orElse(_current_logged_in_user_id_from_access_token())
       .orElse(_current_logged_in_user_id_from_principal_attribute())
-      .orElse(LoginWorkingSet.currentUserId())
+      .orElse(LoginWorkingSet._current_user_id())
 
   def currentLoggedInUserId(id: EntityId)(using ctx: ExecutionContext): Consequence[EntityId] =
     currentLoggedInUserId().flatMap { current =>
@@ -1777,14 +1857,15 @@ object ComponentFactory:
         Consequence.securityAuthenticationRequired("No session id is available in security context.")
 
   private def _current_logged_in_user_id_from_access_token()(using ctx: ExecutionContext): Consequence[EntityId] =
-    ctx.security.principal.attributes.get("access_token").filter(_.trim.nonEmpty) match
+    ctx.security.principal.attributes.get("accessToken")
+      .filter(_.trim.nonEmpty) match
       case Some(token) =>
         _active_access_session_by_token(token).map(_.userAccountId)
       case None =>
         Consequence.securityAuthenticationRequired("No access token is available in security context.")
 
   private def _current_logged_in_user_id_from_principal_attribute()(using ctx: ExecutionContext): Consequence[EntityId] =
-    List("user_account_id", "userAccountId", "authorAccountId").view
+    List("userAccountId", "authorAccountId").view
       .flatMap(key => ctx.security.principal.attributes.get(key).filter(_.trim.nonEmpty))
       .headOption match
         case Some(value) => _principal_entity_id(value)
@@ -1828,8 +1909,8 @@ object ComponentFactory:
     for
       cid <- ctx.entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId)
       result <- ctx.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))
-      sessions <- result.records.toVector
-        .filter(_.getString("token_hash").contains(hashedToken))
+      sessions <- _normalize_data_store_records(result.records.toVector)
+        .filter(_.getString("tokenHash").contains(hashedToken))
         .traverse(AccessSessionEntity.createC)
     yield
       sessions
@@ -1857,7 +1938,7 @@ object ComponentFactory:
   def userAccountAuthenticationProvider(component: Component): AuthenticationProvider =
     new UserAccountAuthenticationProvider(component)
 
-  private def issuePasswordResetToken(
+  private def _issue_password_reset_token(
     userId: EntityId,
     email: String,
     handle: String
@@ -1868,12 +1949,12 @@ object ComponentFactory:
       userId = userId,
       email = email,
       handle = handle,
-      expiresAt = Instant.now.plusSeconds(PasswordResetTtlSeconds.toLong)
+      expiresAt = Instant.now.plusSeconds(_password_reset_ttl_seconds.toLong)
     )
     _password_reset_tokens.update(token, issued)
     Consequence.success(issued)
 
-  private def consumePasswordResetToken(token: String): Consequence[PasswordResetToken] =
+  private def _consume_password_reset_token(token: String): Consequence[PasswordResetToken] =
     _password_reset_tokens.get(token) match
       case Some(current) if current.usedAt.isEmpty && current.expiresAt.isAfter(Instant.now) =>
         val consumed = current.copy(usedAt = Some(Instant.now))
@@ -1884,7 +1965,7 @@ object ComponentFactory:
       case None =>
         Consequence.securityPermissionDenied("invalid password reset token")
 
-  private def enrollTwoFactor(
+  private def _enroll_two_factor(
     userId: EntityId,
     email: String,
     handle: String
@@ -1895,7 +1976,7 @@ object ComponentFactory:
   def isTwoFactorEnrolled(userId: EntityId): Boolean =
     _two_factor_enrollments.contains(userId.print)
 
-  private def issueTwoFactorLoginChallenge(
+  private def _issue_two_factor_login_challenge(
     userId: EntityId,
     email: String,
     handle: String
@@ -1906,12 +1987,12 @@ object ComponentFactory:
       email = email,
       handle = handle,
       code = _verification_code(),
-      expiresAt = Instant.now.plusSeconds(TwoFactorChallengeTtlSeconds.toLong)
+      expiresAt = Instant.now.plusSeconds(_two_factor_challenge_ttl_seconds.toLong)
     )
     _two_factor_login_challenges.update(challenge.challengeId, challenge)
     Consequence.success(challenge)
 
-  private def verifyTwoFactorLoginChallenge(
+  private def _verify_two_factor_login_challenge(
     challengeId: String,
     code: String
   ): Consequence[TwoFactorChallenge] =
@@ -2038,7 +2119,6 @@ object ComponentFactory:
   ): Option[String] =
     Vector(
       "x-textus-session",
-      "session_id",
       "sessionId",
       "textus.session"
     ).iterator.flatMap(request.attribute).collectFirst {
@@ -2048,7 +2128,7 @@ object ComponentFactory:
   private def _required_login_identifier(
     request: AuthenticationRequest
   ): Consequence[String] =
-    Vector("email", "username", "loginName", "login_name")
+    Vector("email", "username", "loginName")
       .iterator
       .flatMap(request.attribute)
       .collectFirst {
@@ -2081,8 +2161,7 @@ object ComponentFactory:
   )(using ctx: ExecutionContext): Consequence[AuthenticationResult] =
     response match
       case RecordResponse(record) =>
-        record.getString("accessSessionId")
-          .orElse(record.getString("access_session_id")) match
+        record.getString("accessSessionId") match
           case Some(sessionId) if sessionId.trim.nonEmpty =>
             authenticateSessionId(sessionId.trim)
           case _ if record.getString("challengeId").nonEmpty =>
@@ -2165,23 +2244,23 @@ object ComponentFactory:
           _ <- _update_refresh_session_fields_direct(
             refresh.id,
             Record.dataAuto(
-              "revoked_at" -> now.toString,
-              "rotated_at" -> now.toString,
-              "successor_session_id" -> successor.id.print
+              "revokedAt" -> now.toString,
+              "rotatedAt" -> now.toString,
+              "successorSessionId" -> successor.id.print
             )
           )
           _ <- _update_access_session_fields_direct(
             session.id,
             Record.dataAuto(
-              "refresh_session_id" -> successor.id.print,
-              "token_hash" -> _token_hash(generateToken()),
-              "issued_at" -> now.toString,
-              "expires_at" -> now.plusSeconds(AccessSessionTtlSeconds.toLong).toString,
-              "last_accessed_at" -> now.toString,
-              "client_id" -> refresh.clientId,
-              "device_info" -> refresh.deviceInfo,
-              "ip_address" -> refresh.ipAddress,
-              "user_agent" -> refresh.userAgent
+              "refreshSessionId" -> successor.id.print,
+              "tokenHash" -> _token_hash(generateToken()),
+              "issuedAt" -> now.toString,
+              "expiresAt" -> now.plusSeconds(AccessSessionTtlSeconds.toLong).toString,
+              "lastAccessedAt" -> now.toString,
+              "clientId" -> refresh.clientId,
+              "deviceInfo" -> refresh.deviceInfo,
+              "ipAddress" -> refresh.ipAddress,
+              "userAgent" -> refresh.userAgent
             )
           )
           restored <- _load_access_session(session.id)
@@ -2222,7 +2301,7 @@ object ComponentFactory:
       cid <- ctx.entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId)
       result <- ctx.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))
       record <- Consequence.successOrEntityNotFound(
-        result.records.toVector.find(_record_entity_id_matches(_, sessionId))
+        _normalize_data_store_records(result.records.toVector).find(_record_entity_id_matches(_, sessionId))
       )(sessionId)
       session <- AccessSessionEntity.createC(record)
     yield
@@ -2235,7 +2314,7 @@ object ComponentFactory:
       cid <- ctx.entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId)
       result <- ctx.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))
       record <- Consequence.successOrEntityNotFound(
-        result.records.toVector.find(_record_entity_id_matches(_, sessionId))
+        _normalize_data_store_records(result.records.toVector).find(_record_entity_id_matches(_, sessionId))
       )(sessionId)
       session <- RefreshSessionEntity.createC(record)
     yield
@@ -2270,7 +2349,7 @@ object ComponentFactory:
         case Some(previousId) =>
           _update_refresh_session_fields_direct(
             previousId,
-            Record.dataAuto("successor_session_id" -> created.id.print)
+            Record.dataAuto("successorSessionId" -> created.id.print)
           )
         case None =>
           Consequence.unit
@@ -2283,7 +2362,7 @@ object ComponentFactory:
   )(using ctx: ExecutionContext): Consequence[Unit] =
     _update_access_session_fields_direct(
       sessionId,
-      Record.dataAuto("last_accessed_at" -> Instant.now)
+      Record.dataAuto("lastAccessedAt" -> Instant.now)
     )
 
   private def _revoke_access_session_direct(
@@ -2292,8 +2371,8 @@ object ComponentFactory:
     _update_access_session_fields_direct(
       sessionId,
       Record.dataAuto(
-        "revoked_at" -> Instant.now,
-        "last_accessed_at" -> Instant.now
+        "revokedAt" -> Instant.now,
+        "lastAccessedAt" -> Instant.now
       )
     )
 
@@ -2302,7 +2381,7 @@ object ComponentFactory:
   )(using ctx: ExecutionContext): Consequence[Unit] =
     _update_refresh_session_fields_direct(
       sessionId,
-      Record.dataAuto("revoked_at" -> Instant.now)
+      Record.dataAuto("revokedAt" -> Instant.now)
     )
 
   private def _revoke_linked_refresh_session(
@@ -2328,7 +2407,7 @@ object ComponentFactory:
       _ <- ds.update(
         cid,
         org.goldenport.cncf.datastore.DataStore.EntryId(sessionId),
-        changes
+        _data_store_update_record(changes)
       )
     yield
       ()
@@ -2343,7 +2422,7 @@ object ComponentFactory:
       _ <- ds.update(
         cid,
         org.goldenport.cncf.datastore.DataStore.EntryId(sessionId),
-        changes
+        _data_store_update_record(changes)
       )
     yield
       ()
@@ -2354,11 +2433,11 @@ object ComponentFactory:
     for
       cid <- ctx.entityStoreSpace.dataStoreCollection(UserAccountQuery.collectionId)
       result <- ctx.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))
-      users <- result.records.toVector
-        .filter(_.getString("login_name").contains(loginName))
+      _users <- _normalize_data_store_records(result.records.toVector)
+        .filter(_.getString("loginName").contains(loginName))
         .traverse(UserAccountEntity.createC)
     yield
-      users
+      _users
 
   def authenticateAccessToken(
     accessToken: String
@@ -2393,7 +2472,7 @@ object ComponentFactory:
       cid <- ctx.entityStoreSpace.dataStoreCollection(UserAccountQuery.collectionId)
       result <- ctx.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))
       record <- Consequence.successOrEntityNotFound(
-        result.records.toVector.find(_record_entity_id_matches(_, userId))
+        _normalize_data_store_records(result.records.toVector).find(_record_entity_id_matches(_, userId))
       )(userId)
       user <- UserAccountEntity.createC(record)
     yield
@@ -2415,8 +2494,8 @@ object ComponentFactory:
     for
       cid <- ctx.entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId)
       result <- ctx.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))
-      sessions <- result.records.toVector
-        .filter(_.getString("token_hash").contains(hashedToken))
+      sessions <- _normalize_data_store_records(result.records.toVector)
+        .filter(_.getString("tokenHash").contains(hashedToken))
         .traverse(RefreshSessionEntity.createC)
     yield
       sessions
@@ -2424,6 +2503,12 @@ object ComponentFactory:
   private def _record_entity_id_matches(record: Record, id: EntityId): Boolean =
     record.getAsC[EntityId]("id").toOption.flatten.exists(_ == id) ||
       record.getString("id").contains(id.print)
+
+  private def _normalize_data_store_records(records: Vector[Record]): Vector[Record] =
+    records.map(_normalize_data_store_record)
+
+  private def _normalize_data_store_record(record: Record): Record =
+    normalizeDataStoreRecord(record)
 
   private def _authentication_result(
     user: UserAccountEntity,
@@ -2433,16 +2518,16 @@ object ComponentFactory:
     AuthenticationResult(
       principalId = PrincipalId(user.id.print),
       attributes = Map(
-        "user_account_id" -> user.id.print,
+        "userAccountId" -> user.id.print,
         "role" -> "user",
         "privilege" -> "user",
         "email" -> user.email,
-        "login_name" -> user.loginName.orNull,
+        "loginName" -> user.loginName.orNull,
         "handle" -> user.loginName.orNull,
         "locale" -> user.locale.orNull,
         "timeZone" -> user.timeZone.orNull,
         "shortid" -> user.id.parts.entropy,
-        "access_token" -> accessToken
+        "accessToken" -> accessToken
       ).collect { case (k, v) if v != null && v.nonEmpty => k -> v },
       capabilities = Set(Capability("user")),
       level = SecurityLevel("user"),
@@ -2468,16 +2553,16 @@ object ComponentFactory:
     AuthenticationResult(
       principalId = PrincipalId(user.id.print),
       attributes = Map(
-        "user_account_id" -> user.id.print,
+        "userAccountId" -> user.id.print,
         "role" -> "user",
         "privilege" -> "user",
         "email" -> user.email,
-        "login_name" -> user.loginName.orNull,
+        "loginName" -> user.loginName.orNull,
         "handle" -> user.loginName.orNull,
         "locale" -> user.locale.orNull,
         "timeZone" -> user.timeZone.orNull,
         "shortid" -> user.id.parts.entropy,
-        "refresh_token" -> refreshToken
+        "refreshToken" -> refreshToken
       ).collect { case (k, v) if v != null && v.nonEmpty => k -> v },
       capabilities = Set(Capability("user")),
       level = SecurityLevel("user"),
@@ -2503,11 +2588,11 @@ object ComponentFactory:
     AuthenticationResult(
       principalId = PrincipalId(user.id.print),
       attributes = Map(
-        "user_account_id" -> user.id.print,
+        "userAccountId" -> user.id.print,
         "role" -> "user",
         "privilege" -> "user",
         "email" -> user.email,
-        "login_name" -> user.loginName.orNull,
+        "loginName" -> user.loginName.orNull,
         "handle" -> user.loginName.orNull,
         "locale" -> user.locale.orNull,
         "timeZone" -> user.timeZone.orNull,
@@ -2536,10 +2621,10 @@ object ComponentFactory:
     userAgent: Option[String]
   ): Map[String, String] =
     Vector(
-      clientId.map("client_id" -> _),
-      deviceInfo.map("device_info" -> _),
-      ipAddress.map("ip_address" -> _),
-      userAgent.map("user_agent" -> _)
+      clientId.map("clientId" -> _),
+      deviceInfo.map("deviceInfo" -> _),
+      ipAddress.map("ipAddress" -> _),
+      userAgent.map("userAgent" -> _)
     ).flatten.toMap
 
   private def _session_display_attributes(
@@ -2558,28 +2643,28 @@ object ComponentFactory:
     f"${Random.nextInt(1000000)}%06d"
 
   private object LoginWorkingSet:
-    private val users = TrieMap.empty[EntityId, UserAccountEntity]
+    private val _users = TrieMap.empty[EntityId, UserAccountEntity]
 
     def upsert(user: UserAccountEntity): Unit =
-      users.put(user.id, user)
+      _users.put(user.id, user)
 
     def remove(id: EntityId): Unit =
-      users.remove(id)
+      _users.remove(id)
 
     def contains(id: EntityId): Boolean =
-      users.contains(id)
+      _users.contains(id)
 
-    def currentUserId(): Consequence[EntityId] =
-      users.keys.toVector match
+    def _current_user_id(): Consequence[EntityId] =
+      _users.keys.toVector match
         case Vector(id) => Consequence.success(id)
         case Vector() => Consequence.stateConflict("No active user account is available in working set.")
         case _ => Consequence.stateConflict("Multiple active user accounts are available in working set.")
 
     def snapshot: Vector[UserAccountEntity] =
-      users.values.toVector
+      _users.values.toVector
 
     def clear(): Unit =
-      users.clear()
+      _users.clear()
 
   private[textus] def resetLoginWorkingSetForTest(): Unit =
     LoginWorkingSet.clear()
@@ -2594,12 +2679,12 @@ object ComponentFactory:
     }
 
   def create(componentCreate: ComponentCreate): Vector[Component] =
-    Vector(_withArtifactMetadata(new ComponentFactory().createPrimary(componentCreate)))
+    Vector(_with_artifact_metadata(new ComponentFactory().createPrimary(componentCreate)))
 
   def createStandalone(): Component =
-    _withArtifactMetadata(UserAccountComponent())
+    _with_artifact_metadata(UserAccountComponent())
 
-  private def _withArtifactMetadata(component: Component): Component =
+  private def _with_artifact_metadata(component: Component): Component =
     component.withArtifactMetadata(
       Component.ArtifactMetadata(
         sourceType = "standalone",

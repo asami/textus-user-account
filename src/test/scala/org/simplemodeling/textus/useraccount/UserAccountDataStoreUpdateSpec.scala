@@ -9,6 +9,7 @@ import org.goldenport.cncf.component.builtin.messagedeliverystub.MessageDelivery
 import org.goldenport.cncf.context.{DataStoreContext, EntityStoreContext, ExecutionContext, Principal, PrincipalId, RuntimeContext, SecurityContext}
 import org.goldenport.cncf.security.AuthenticationRequest
 import org.goldenport.cncf.datastore.{DataStore, DataStoreSpace}
+import org.goldenport.cncf.datastore.sql.SqlDataStore
 import org.goldenport.datatype.{Identifier, Name, ObjectId}
 import org.goldenport.protocol.{Property, Request}
 import org.goldenport.protocol.operation.OperationResponse
@@ -32,7 +33,7 @@ import java.security.MessageDigest
 /*
  * @since   Apr.  7, 2026
  *  version Apr. 25, 2026
- * @version May.  9, 2026
+ * @version May. 26, 2026
  * @author  ASAMI, Tomoharu
  */
 final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
@@ -128,7 +129,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       _seed_user_account(userId, ownerPrincipalId, "integration-manual@example.com").toOption.isDefined shouldBe true
       _seed_credential(userId, ownerPrincipalId, "secret").toOption.isDefined shouldBe true
 
-      val anonymousCtx = _with_security(
+      val anonymousctx = _with_security(
         fixture,
         ownerPrincipalId,
         withAccessToken = false,
@@ -146,7 +147,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         request,
         request.toRecord
       )
-      val call = component.logic.createActionCall(action, anonymousCtx)
+      val call = component.logic.createActionCall(action, anonymousctx)
       val result = component.actionEngine.execute(call)
       result.toOption.isDefined shouldBe true
       val sessions = {
@@ -171,14 +172,14 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       _seed_credential(userId, ownerPrincipalId, "secret").toOption.isDefined shouldBe true
 
       val staleAccessSessionId = _access_session_id("stale_authenticated_caller").print
-      val authenticatedCtx = _with_security(
+      val authenticatedctx = _with_security(
         fixture,
         userId.print,
-        extraAttributes = Map("access_token" -> staleAccessSessionId)
+        extraAttributes = Map("accessToken" -> staleAccessSessionId)
       )
       val result = _execute_request(
         component,
-        authenticatedCtx,
+        authenticatedctx,
         Request.ofService(
           "User",
           "login",
@@ -215,7 +216,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       ).toOption.isDefined shouldBe true
       _seed_credential(userId, ownerPrincipalId, "secret").toOption.isDefined shouldBe true
 
-      val anonymousCtx = _with_security(
+      val anonymousctx = _with_security(
         fixture,
         ownerPrincipalId,
         withAccessToken = false,
@@ -223,7 +224,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       )
       val result = _execute_request(
         component,
-        anonymousCtx,
+        anonymousctx,
         Request.ofService(
           "User",
           "login",
@@ -239,7 +240,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
     "register a user with loginName and resolve it by loginName lookup" in {
       val fixture = _fixture()
       val component = _component()
-      val anonymousCtx = _with_security(
+      val anonymousctx = _with_security(
         fixture,
         "register_lookup_owner",
         withAccessToken = false,
@@ -248,7 +249,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
 
       val registered = _execute_request(
         component,
-        anonymousCtx,
+        anonymousctx,
         Request.ofService(
           "User",
           "register",
@@ -267,7 +268,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
 
       val lookedUp = _execute_request(
         component,
-        anonymousCtx,
+        anonymousctx,
         Request.ofService(
           "User",
           "lookupUserByLoginName",
@@ -276,10 +277,104 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       )
       lookedUp.toOption.isDefined shouldBe true
       val response = lookedUp.toOption.get.asInstanceOf[RecordResponse].record
-      response.getString("login_name").orElse(response.getString("loginName")) shouldBe Some("alice")
+      response.getString("loginName").orElse(response.getString("loginName")) shouldBe Some("alice")
       response.getString("email") shouldBe Some("alice@example.com")
       response.getString("locale") shouldBe Some("ja-JP")
-      response.getString("time_zone").orElse(response.getString("timeZone")) shouldBe Some("Asia/Tokyo")
+      response.getString("timeZone").orElse(response.getString("timeZone")) shouldBe Some("Asia/Tokyo")
+    }
+
+    "execute login for a registered user" in {
+      val fixture = _fixture()
+      val component = _component()
+      val anonymousctx = _with_security(
+        fixture,
+        "register_login_owner",
+        withAccessToken = false,
+        extraAttributes = Map("anonymous" -> "true")
+      )
+
+      val registered = _execute_request(
+        component,
+        anonymousctx,
+        Request.ofService(
+          "User",
+          "register",
+          properties = List(
+            Property("name", "Bob", None),
+            Property("title", "member", None),
+            Property("loginName", "bob", None),
+            Property("email", "bob@example.com", None),
+            Property("password", "secret", None)
+          )
+        )
+      )
+      registered.toOption.isDefined shouldBe true
+
+      val login = _execute_request(
+        component,
+        anonymousctx,
+        Request.ofService(
+          "User",
+          "login",
+          properties = List(
+            Property("identifier", "bob", None),
+            Property("password", "secret", None)
+          )
+        )
+      )
+      login.toOption.isDefined shouldBe true
+      val response = login.toOption.get.asInstanceOf[RecordResponse].record
+      response.getString("accessToken") should not be empty
+      response.getString("accessSessionId") should not be empty
+      response.getString("refreshToken") should not be empty
+      response.getString("userAccountId") should not be empty
+    }
+
+    "execute login for a registered user in SQLite datastore mode" in {
+      val fixture = _sqlite_fixture()
+      val component = _component()
+      val anonymousctx = _with_security(
+        fixture,
+        "register_login_sqlite_owner",
+        withAccessToken = false,
+        extraAttributes = Map("anonymous" -> "true")
+      )
+
+      val registered = _execute_request(
+        component,
+        anonymousctx,
+        Request.ofService(
+          "User",
+          "register",
+          properties = List(
+            Property("name", "Sqlite Bob", None),
+            Property("title", "member", None),
+            Property("loginName", "sqlite-bob", None),
+            Property("email", "sqlite-bob@example.com", None),
+            Property("password", "secret", None)
+          )
+        )
+      )
+      registered.toOption.isDefined shouldBe true
+
+      val login = _execute_request(
+        component,
+        anonymousctx,
+        Request.ofService(
+          "User",
+          "login",
+          properties = List(
+            Property("identifier", "sqlite-bob", None),
+            Property("password", "secret", None)
+          )
+        )
+      )
+      login.toOption.isDefined shouldBe true
+      val response = login.toOption.get.asInstanceOf[RecordResponse].record
+      response.getString("accessToken") should not be empty
+      response.getString("accessSessionId") should not be empty
+      response.getString("refreshToken") should not be empty
+      response.getString("userAccountId") should not be empty
     }
 
     "reject loginName lookup for suspended accounts" in {
@@ -316,12 +411,12 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       _seed_user_account(userId, ownerPrincipalId, "session-current@example.com").toOption.isDefined shouldBe true
       _seed_access_session(userId, ownerPrincipalId, token).toOption.isDefined shouldBe true
 
-      val authenticatedCtx = _with_security(
+      val authenticatedctx = _with_security(
         fixture,
         ownerPrincipalId,
-        extraAttributes = Map("access_token" -> token)
+        extraAttributes = Map("accessToken" -> token)
       )
-      ComponentFactory.currentLoggedInUserId()(using authenticatedCtx).toOption shouldBe Some(userId)
+      ComponentFactory.currentLoggedInUserId()(using authenticatedctx).toOption shouldBe Some(userId)
     }
 
     "load user account aggregate with its user profile" in {
@@ -391,17 +486,17 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       _seed_refresh_session(userId, ownerPrincipalId, otherRefreshToken).toOption.isDefined shouldBe true
       _seed_access_session(userId, ownerPrincipalId, otherAccessToken, None).toOption.isDefined shouldBe true
 
-      val authenticatedCtx = _with_security(
+      val authenticatedctx = _with_security(
         fixture,
         ownerPrincipalId,
         extraAttributes = Map(
-          "access_token" -> currentAccessToken,
-          "refresh_token" -> currentRefreshToken
+          "accessToken" -> currentAccessToken,
+          "refreshToken" -> currentRefreshToken
         )
       )
       val result = _execute_request(
         component,
-        authenticatedCtx,
+        authenticatedctx,
         Request.ofService(
           "User",
           "logout",
@@ -439,17 +534,17 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       _seed_refresh_session(userId, ownerPrincipalId, "refresh-token-all-other").toOption.isDefined shouldBe true
       _seed_access_session(userId, ownerPrincipalId, "access-token-all-other", None).toOption.isDefined shouldBe true
 
-      val authenticatedCtx = _with_security(
+      val authenticatedctx = _with_security(
         fixture,
         ownerPrincipalId,
         extraAttributes = Map(
-          "access_token" -> currentAccessToken,
-          "refresh_token" -> currentRefreshToken
+          "accessToken" -> currentAccessToken,
+          "refreshToken" -> currentRefreshToken
         )
       )
       val result = _execute_request(
         component,
-        authenticatedCtx,
+        authenticatedctx,
         Request.ofService(
           "User",
           "logoutAll",
@@ -479,7 +574,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       _seed_user_account(userId, ownerPrincipalId, "refresh@example.com").toOption.isDefined shouldBe true
       val originalRefreshId = _seed_refresh_session(userId, ownerPrincipalId, refreshToken).toOption.get
 
-      val anonymousCtx = _with_security(
+      val anonymousctx = _with_security(
         fixture,
         ownerPrincipalId,
         withAccessToken = false,
@@ -487,7 +582,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       )
       val result = _execute_request(
         component,
-        anonymousCtx,
+        anonymousctx,
         Request.ofService(
           "User",
           "refreshAccessToken",
@@ -518,7 +613,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       _seed_user_account(userId, ownerPrincipalId, "reuse@example.com").toOption.isDefined shouldBe true
       _seed_refresh_session(userId, ownerPrincipalId, refreshToken).toOption.isDefined shouldBe true
 
-      val anonymousCtx = _with_security(
+      val anonymousctx = _with_security(
         fixture,
         ownerPrincipalId,
         withAccessToken = false,
@@ -527,7 +622,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
 
       val first = _execute_request(
         component,
-        anonymousCtx,
+        anonymousctx,
         Request.ofService(
           "User",
           "refreshAccessToken",
@@ -538,7 +633,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
 
       val second = _execute_request(
         component,
-        anonymousCtx,
+        anonymousctx,
         Request.ofService(
           "User",
           "refreshAccessToken",
@@ -576,7 +671,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       login.toOption.flatten should not be empty
       val authenticated = login.toOption.flatten.get
       val sessionId = authenticated.session.flatMap(_.sessionId).getOrElse(fail("session id missing"))
-      authenticated.attributes.get("access_token") shouldBe empty
+      authenticated.attributes.get("accessToken") shouldBe empty
       authenticated.attributes.get("locale") shouldBe Some("ja-JP")
       authenticated.attributes.get("timeZone") shouldBe Some("Asia/Tokyo")
       authenticated.session.flatMap(_.attributes.get("locale")) shouldBe Some("ja-JP")
@@ -710,7 +805,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       previous.getString("successor_session_id") should not be empty
 
       val rotatedAccess = accessDatastore.load(accessCid, accessDsId).toOption.flatten.getOrElse(fail("rotated access missing"))
-      rotatedAccess.getString("refresh_session_id") should not be Some(refreshId.print)
+      rotatedAccess.getString("refreshSessionId") should not be Some(refreshId.print)
       rotatedAccess.getString("revoked_at") shouldBe empty
     }
 
@@ -722,14 +817,14 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val userId = _user_account_id("login_patch")
       _seed_user_account(userId, ownerPrincipalId, "integration@example.com").toOption.isDefined shouldBe true
 
-      val anonymousCtx = _with_security(
+      val anonymousctx = _with_security(
         fixture,
         ownerPrincipalId,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
       val action = _ProbeEntityPatchAction(userId)
-      val call = action.createCall(ActionCall.Core(action, anonymousCtx, Some(component), None))
+      val call = action.createCall(ActionCall.Core(action, anonymousctx, Some(component), None))
       val result = component.actionEngine.execute(call)
       result.toOption.isDefined shouldBe true
     }
@@ -742,14 +837,14 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val userId = _user_account_id("login_workingset")
       _seed_user_account(userId, ownerPrincipalId, "integration@example.com").toOption.isDefined shouldBe true
 
-      val anonymousCtx = _with_security(
+      val anonymousctx = _with_security(
         fixture,
         ownerPrincipalId,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
       val action = _ProbeWorkingSetUpsertAction(userId)
-      val call = action.createCall(ActionCall.Core(action, anonymousCtx, Some(component), None))
+      val call = action.createCall(ActionCall.Core(action, anonymousctx, Some(component), None))
       val result = component.actionEngine.execute(call)
       result.toOption.isDefined shouldBe true
     }
@@ -762,14 +857,14 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val userId = _user_account_id("login_shape")
       _seed_user_account(userId, ownerPrincipalId, "integration@example.com").toOption.isDefined shouldBe true
 
-      val anonymousCtx = _with_security(
+      val anonymousctx = _with_security(
         fixture,
         ownerPrincipalId,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
       val action = _ProbeLoginWorkingSetOnlyAction(userId)
-      val call = action.createCall(ActionCall.Core(action, anonymousCtx, Some(component), None))
+      val call = action.createCall(ActionCall.Core(action, anonymousctx, Some(component), None))
       val result = component.actionEngine.execute(call)
       result.toOption.isDefined shouldBe true
     }
@@ -802,14 +897,14 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       _seed_user_account(userId, ownerPrincipalId, "integration-user-proc@example.com").toOption.isDefined shouldBe true
       _seed_credential(userId, ownerPrincipalId, "secret").toOption.isDefined shouldBe true
 
-      val anonymousCtx = _with_security(
+      val anonymousctx = _with_security(
         fixture,
         ownerPrincipalId,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
       val action = _ProbeRawUserLookupProcedureAction("integration-user-proc@example.com")
-      val call = action.createCall(ActionCall.Core(action, anonymousCtx, Some(component), None))
+      val call = action.createCall(ActionCall.Core(action, anonymousctx, Some(component), None))
       val result = component.actionEngine.execute(call)
       result.toOption.isDefined shouldBe true
     }
@@ -823,14 +918,14 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       _seed_user_account(userId, ownerPrincipalId, "integration-user-only@example.com").toOption.isDefined shouldBe true
       _seed_credential(userId, ownerPrincipalId, "secret").toOption.isDefined shouldBe true
 
-      val anonymousCtx = _with_security(
+      val anonymousctx = _with_security(
         fixture,
         ownerPrincipalId,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
       val action = _ProbeRawUserLookupLoginAction("integration-user-only@example.com")
-      val call = action.createCall(ActionCall.Core(action, anonymousCtx, Some(component), None))
+      val call = action.createCall(ActionCall.Core(action, anonymousctx, Some(component), None))
       val result = component.actionEngine.execute(call)
       result.toOption.isDefined shouldBe true
     }
@@ -843,14 +938,14 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val userId = _user_account_id("login_probe_id_compare")
       _seed_user_account(userId, ownerPrincipalId, "integration-id-compare@example.com").toOption.isDefined shouldBe true
 
-      val anonymousCtx = _with_security(
+      val anonymousctx = _with_security(
         fixture,
         ownerPrincipalId,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
       val action = _ProbeCompareRecoveredUserIdAction(userId, "integration-id-compare@example.com")
-      val call = action.createCall(ActionCall.Core(action, anonymousCtx, Some(component), None))
+      val call = action.createCall(ActionCall.Core(action, anonymousctx, Some(component), None))
       val result = component.actionEngine.execute(call)
       result.toOption.isDefined shouldBe true
     }
@@ -863,14 +958,14 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val userId = _user_account_id("login_probe_dump")
       _seed_user_account(userId, ownerPrincipalId, "integration-dump@example.com").toOption.isDefined shouldBe true
 
-      val anonymousCtx = _with_security(
+      val anonymousctx = _with_security(
         fixture,
         ownerPrincipalId,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
       val action = _ProbeDumpRawUserRecordsAction("integration-dump@example.com")
-      val call = action.createCall(ActionCall.Core(action, anonymousCtx, Some(component), None))
+      val call = action.createCall(ActionCall.Core(action, anonymousctx, Some(component), None))
       val result = component.actionEngine.execute(call)
       result.toOption.isDefined shouldBe true
     }
@@ -883,14 +978,14 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val userId = _user_account_id("login_probe_typed_load")
       _seed_user_account(userId, ownerPrincipalId, "integration-typed-load@example.com").toOption.isDefined shouldBe true
 
-      val anonymousCtx = _with_security(
+      val anonymousctx = _with_security(
         fixture,
         ownerPrincipalId,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
       val action = _ProbeTypedUserLoadAction(userId)
-      val call = action.createCall(ActionCall.Core(action, anonymousCtx, Some(component), None))
+      val call = action.createCall(ActionCall.Core(action, anonymousctx, Some(component), None))
       val result = component.actionEngine.execute(call)
       result.toOption.isDefined shouldBe true
     }
@@ -904,14 +999,14 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       _seed_user_account(userId, ownerPrincipalId, "integration-raw@example.com").toOption.isDefined shouldBe true
       _seed_credential(userId, ownerPrincipalId, "secret").toOption.isDefined shouldBe true
 
-      val anonymousCtx = _with_security(
+      val anonymousctx = _with_security(
         fixture,
         ownerPrincipalId,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
       val action = _ProbeRawLookupLoginAction("integration-raw@example.com", "secret")
-      val call = action.createCall(ActionCall.Core(action, anonymousCtx, Some(component), None))
+      val call = action.createCall(ActionCall.Core(action, anonymousctx, Some(component), None))
       val result = component.actionEngine.execute(call)
       result.toOption.isDefined shouldBe true
     }
@@ -930,11 +1025,11 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       ).toOption.isDefined shouldBe true
       _seed_credential(userId, ownerPrincipalId, "secret").toOption.isDefined shouldBe true
 
-      val authenticatedCtx = _with_security(fixture, userId.print)
-      ComponentFactory.addLoggedInUserForTest(userId)(using authenticatedCtx).toOption.isDefined shouldBe true
+      val authenticatedctx = _with_security(fixture, userId.print)
+      ComponentFactory.addLoggedInUserForTest(userId)(using authenticatedctx).toOption.isDefined shouldBe true
       _execute_request(
         component,
-        authenticatedCtx,
+        authenticatedctx,
         Request.ofService(
           "User",
           "verifyMyEmail",
@@ -946,7 +1041,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
 
       _execute_request(
         component,
-        authenticatedCtx,
+        authenticatedctx,
         Request.ofService(
           "User",
           "verifyMyPhone",
@@ -982,12 +1077,12 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         emailVerifiedAt = Some(java.time.Instant.parse("2026-04-08T00:00:00Z"))
       ).toOption.isDefined shouldBe true
 
-      val authenticatedCtx = _with_security(fixture, userId.print)
-      ComponentFactory.addLoggedInUserForTest(userId)(using authenticatedCtx).toOption.isDefined shouldBe true
+      val authenticatedctx = _with_security(fixture, userId.print)
+      ComponentFactory.addLoggedInUserForTest(userId)(using authenticatedctx).toOption.isDefined shouldBe true
 
       val result = _execute_request(
         component,
-        authenticatedCtx,
+        authenticatedctx,
         Request.ofService(
           "User",
           "verifyMyEmail",
@@ -1008,12 +1103,12 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       given ExecutionContext = fixture.contextFor(_security_context(ownerPrincipalId))
       _seed_user_account(userId, ownerPrincipalId, "missing-phone@example.com").toOption.isDefined shouldBe true
 
-      val authenticatedCtx = _with_security(fixture, userId.print)
-      ComponentFactory.addLoggedInUserForTest(userId)(using authenticatedCtx).toOption.isDefined shouldBe true
+      val authenticatedctx = _with_security(fixture, userId.print)
+      ComponentFactory.addLoggedInUserForTest(userId)(using authenticatedctx).toOption.isDefined shouldBe true
 
       val result = _execute_request(
         component,
-        authenticatedCtx,
+        authenticatedctx,
         Request.ofService(
           "User",
           "verifyMyPhone",
@@ -1040,12 +1135,12 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         phoneNumber = Some("09000000000")
       ).toOption.isDefined shouldBe true
 
-      val authenticatedCtx = _with_security(fixture, userId.print)
-      ComponentFactory.addLoggedInUserForTest(userId)(using authenticatedCtx).toOption.isDefined shouldBe true
+      val authenticatedctx = _with_security(fixture, userId.print)
+      ComponentFactory.addLoggedInUserForTest(userId)(using authenticatedctx).toOption.isDefined shouldBe true
 
       val result = _execute_request(
         component,
-        authenticatedCtx,
+        authenticatedctx,
         Request.ofService(
           "User",
           "verifyMyPhone",
@@ -1132,7 +1227,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
     "request password reset without leaking account existence and confirm it with the issued token" in {
       val fixture = _fixture()
       val component = _component()
-      val anonymousCtx = _with_security(
+      val anonymousctx = _with_security(
         fixture,
         "password_reset_owner",
         withAccessToken = false,
@@ -1141,7 +1236,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
 
       val registered = _execute_request(
         component,
-        anonymousCtx,
+        anonymousctx,
         Request.ofService(
           "User",
           "register",
@@ -1158,7 +1253,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
 
       val acceptedKnown = _execute_request(
         component,
-        anonymousCtx,
+        anonymousctx,
         Request.ofService(
           "User",
           "requestPasswordReset",
@@ -1167,7 +1262,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       )
       val acceptedUnknown = _execute_request(
         component,
-        anonymousCtx,
+        anonymousctx,
         Request.ofService(
           "User",
           "requestPasswordReset",
@@ -1178,16 +1273,16 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       acceptedUnknown.toOption.isDefined shouldBe true
       val resetDelivery = MessageDeliveryStubComponent.deliveries.lastOption.getOrElse(fail("missing reset notification"))
       resetDelivery.recipient shouldBe "reset-user@example.com"
-      val resetToken = resetDelivery.attributes.getOrElse("reset_token", fail("missing reset token"))
+      val resettoken = resetDelivery.attributes.getOrElse("resetToken", fail("missing reset token"))
 
       val confirm = _execute_request(
         component,
-        anonymousCtx,
+        anonymousctx,
         Request.ofService(
           "User",
           "confirmPasswordReset",
           properties = List(
-            Property("token", resetToken, None),
+            Property("token", resettoken, None),
             Property("newPassword", "secret-2", None)
           )
         )
@@ -1196,7 +1291,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
 
       val oldLogin = _execute_request(
         component,
-        anonymousCtx,
+        anonymousctx,
         Request.ofService(
           "User",
           "login",
@@ -1210,7 +1305,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
 
       val newLogin = _execute_request(
         component,
-        anonymousCtx,
+        anonymousctx,
         Request.ofService(
           "User",
           "login",
@@ -1226,7 +1321,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
     "enroll two factor and require challenge completion for subsequent login" in {
       val fixture = _fixture()
       val component = _component()
-      val anonymousCtx = _with_security(
+      val anonymousctx = _with_security(
         fixture,
         "two_factor_owner",
         withAccessToken = false,
@@ -1235,7 +1330,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
 
       val registered = _execute_request(
         component,
-        anonymousCtx,
+        anonymousctx,
         Request.ofService(
           "User",
           "register",
@@ -1252,7 +1347,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
 
       val loginBeforeEnroll = _execute_request(
         component,
-        anonymousCtx,
+        anonymousctx,
         Request.ofService(
           "User",
           "login",
@@ -1265,11 +1360,11 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       loginBeforeEnroll.toOption.isDefined shouldBe true
       val loginRecord = loginBeforeEnroll.toOption.get.asInstanceOf[RecordResponse].record
       val userId = loginRecord.getString("userAccountId").getOrElse(fail("missing user account id"))
-      val authenticatedCtx = _with_security(fixture, "two_factor_owner", extraAttributes = Map("user_account_id" -> userId))
+      val authenticatedctx = _with_security(fixture, "two_factor_owner", extraAttributes = Map("userAccountId" -> userId))
 
       val enrolled = _execute_request(
         component,
-        authenticatedCtx,
+        authenticatedctx,
         Request.ofService("User", "enrollTwoFactor", properties = List(Property("userAccountId", userId, None)))
       )
       enrolled.toOption.isDefined shouldBe true
@@ -1278,7 +1373,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       MessageDeliveryStubComponent.clearDeliveries()
       val challenged = _execute_request(
         component,
-        anonymousCtx,
+        anonymousctx,
         Request.ofService(
           "User",
           "login",
@@ -1298,7 +1393,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
 
       val invalid = _execute_request(
         component,
-        anonymousCtx,
+        anonymousctx,
         Request.ofService(
           "User",
           "verifyTwoFactorLogin",
@@ -1312,7 +1407,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
 
       val verified = _execute_request(
         component,
-        anonymousCtx,
+        anonymousctx,
         Request.ofService(
           "User",
           "verifyTwoFactorLogin",
@@ -1328,10 +1423,18 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
     }
 
   private def _fixture(): _Fixture = {
+    _fixture(DataStore.inMemorySearchable())
+  }
+
+  private def _sqlite_fixture(): _Fixture = {
+    _fixture(SqlDataStore.sqlite(":memory:", config = SqlDataStore.Config(normalizeColumnNames = true)))
+  }
+
+  private def _fixture(datastore: DataStore): _Fixture = {
     ComponentFactory.resetLoginWorkingSetForTest()
     ComponentFactory.resetEphemeralSecurityStateForTest()
     MessageDeliveryStubComponent.clearDeliveries()
-    val datastoreSpace = new DataStoreSpace().addDataStore(DataStore.inMemorySearchable())
+    val datastorespace = new DataStoreSpace().addDataStore(datastore)
     val entityStoreSpace = org.goldenport.cncf.entity.EntityStoreSpace.create(
       ResolvedConfiguration(Configuration.empty, ConfigurationTrace.empty)
     )
@@ -1340,7 +1443,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       name = "textus-user-account-datastore-probe",
       parent = None,
       observabilityContext = base.observability,
-      datastore = Some(DataStoreContext(datastoreSpace)),
+      datastore = Some(DataStoreContext(datastorespace)),
       entitystore = Some(EntityStoreContext(entityStoreSpace))
     )
     val eventEngine = org.goldenport.cncf.event.EventEngine.noop(DataStore.noop())
@@ -1401,7 +1504,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         def id: PrincipalId = PrincipalId(principalId)
         def attributes: Map[String, String] =
           privilege.attributes ++
-            (if (withAccessToken) Map("access_token" -> s"token-$principalId") else Map.empty) ++
+            (if (withAccessToken) Map("accessToken" -> s"token-$principalId") else Map.empty) ++
             extraAttributes
       },
       capabilities = privilege.capabilities,
