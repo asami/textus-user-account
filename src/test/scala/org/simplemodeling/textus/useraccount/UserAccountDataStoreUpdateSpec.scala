@@ -759,6 +759,20 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       result.toOption shouldBe Some(None)
     }
 
+    "treat missing stored provider current session as anonymous" in {
+      val fixture = _fixture()
+      val component = _component()
+      given ExecutionContext = fixture.executionContext
+      val provider = component.authenticationProviders.head
+      val sessionid = _access_session_id("missing_stored_current_session").print
+
+      val result = provider.currentSession(AuthenticationRequest(Map(
+        "x-textus-session" -> sessionid
+      )))
+
+      result.toOption shouldBe Some(None)
+    }
+
     "treat invalid provider logout as already cleared" in {
       val fixture = _fixture()
       val component = _component()

@@ -2071,7 +2071,10 @@ object ComponentFactory:
     m: Consequence.Failure[?]
   ): Boolean = {
     val shown = m.conclusion.show
-    shown.contains("Entity.NotFound[") || shown.contains("invalid session") || shown.contains("Invalid UniversalId format")
+    shown.contains("Entity.NotFound[") ||
+    shown.contains("entity.not-found[") ||
+    shown.contains("invalid session") ||
+    shown.contains("Invalid UniversalId format")
   }
 
   private def _provider_login(
