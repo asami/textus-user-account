@@ -9,6 +9,7 @@ import scala.util.Random
 
 import cats.syntax.all.*
 import org.goldenport.Consequence
+import org.goldenport.configuration.ResolvedConfiguration
 import org.goldenport.datatype.Name
 import org.simplemodeling.model.datatype.{EntityCollectionId, EntityId}
 import org.goldenport.protocol.operation.OperationResponse
@@ -16,8 +17,9 @@ import org.goldenport.protocol.operation.OperationResponse.RecordResponse
 import org.goldenport.record.Record
 import org.goldenport.protocol.{Property, Request}
 import org.goldenport.cncf.action.ActionCall
-import org.goldenport.cncf.component.{Component, ComponentCreate, EntityRuntimePlanProvider}
+import org.goldenport.cncf.component.{Component, ComponentCreate, ComponentInit, EntityRuntimePlanProvider}
 import org.goldenport.cncf.CncfVersion
+import org.goldenport.cncf.config.RuntimeConfig
 import org.goldenport.cncf.context.{Capability, ExecutionContext, Principal, PrincipalId, SecurityContext, SecurityLevel, SessionContext, SubjectKind}
 import org.goldenport.cncf.datastore.{Query as DsQuery, QueryDirective as DsQueryDirective}
 import org.goldenport.cncf.directive.Query
@@ -41,7 +43,7 @@ import org.simplemodeling.textus.useraccount.entity.update.{AccessSession => Acc
  *  version Mar. 24, 2026
  *  version Apr. 25, 2026
  *  version May.  9, 2026
- * @version May. 26, 2026
+ * @version Jun.  3, 2026
  * @author  ASAMI, Tomoharu
  */
 class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePlanProvider:
@@ -135,8 +137,16 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
   override protected def create_Component(params: ComponentCreate): Component =
     new UserAccountComponent() {
+      private val _debug_auth_working_set = new ComponentFactory.DebugAuthWorkingSet()
+
+      override protected def initialize_Component(params: ComponentInit): Unit =
+        ComponentFactory._bootstrap_debug_auth(params, this, _debug_auth_working_set) match
+          case Consequence.Success(_) => ()
+          case m: Consequence.Failure[?] =>
+            throw new IllegalArgumentException(m.conclusion.show)
+
       override def authenticationProviders: Vector[AuthenticationProvider] =
-        Vector(ComponentFactory.userAccountAuthenticationProvider(this))
+        Vector(ComponentFactory._user_account_authentication_provider(this, _debug_auth_working_set))
     }
 
   override val view = new UserAccountComponent.ViewServiceFactory() {
@@ -1556,6 +1566,43 @@ object ComponentFactory:
     consumedAt: Option[Instant] = None
   )
 
+  private final case class DebugAuthSettings(
+    enabled: Boolean,
+    seedAccountEnabled: Boolean,
+    autoLoginEnabled: Boolean,
+    loginName: String,
+    email: String,
+    password: String,
+    status: String
+  ) {
+    def requiresAccount: Boolean =
+      enabled && (seedAccountEnabled || autoLoginEnabled)
+  }
+
+  private final class DebugAuthWorkingSet {
+    private val _settings = TrieMap.empty[String, DebugAuthSettings]
+    private val _auto_login_session_id = TrieMap.empty[String, String]
+
+    def putSettings(settings: DebugAuthSettings): Unit =
+      _settings.update("default", settings)
+
+    def settings: Option[DebugAuthSettings] =
+      _settings.get("default")
+
+    def put(sessionid: String): Unit =
+      _auto_login_session_id.update("default", sessionid)
+
+    def get: Option[String] =
+      _auto_login_session_id.get("default")
+
+    def clearSession(): Unit =
+      _auto_login_session_id.clear()
+
+    def clear(): Unit =
+      _settings.clear()
+      _auto_login_session_id.clear()
+  }
+
   private val _password_reset_ttl_seconds: Int = 60 * 30
   private val _two_factor_challenge_ttl_seconds: Int = 60 * 10
   private val _password_reset_tokens = TrieMap.empty[String, PasswordResetToken]
@@ -1567,6 +1614,202 @@ object ComponentFactory:
 
   def normalizeDataStoreRecord(record: Record): Record =
     _normalize_record_keys(record).TAKE
+
+  private def _bootstrap_debug_auth(
+    params: ComponentInit,
+    component: Component,
+    workingset: DebugAuthWorkingSet
+  ): Consequence[Unit] =
+    for
+      _ <- _require_debug_auth_operation_mode(params.subsystem.configuration)
+      settings <- Consequence.success(_debug_auth_settings(params.subsystem.configuration))
+    yield
+      if (!settings.enabled) {
+        workingset.clear()
+      } else {
+        workingset.putSettings(settings)
+        if (!settings.autoLoginEnabled)
+          workingset.clearSession()
+      }
+
+  private def _debug_auth_settings(conf: ResolvedConfiguration): DebugAuthSettings =
+    DebugAuthSettings(
+      enabled = _debug_auth_boolean(conf, "textus.debug.auth.enabled", false),
+      seedAccountEnabled = _debug_auth_boolean(conf, "textus.debug.auth.seed-account.enabled", false),
+      autoLoginEnabled = _debug_auth_boolean(conf, "textus.debug.auth.auto-login.enabled", false),
+      loginName = _debug_auth_string(conf, "textus.debug.auth.account.login-name").getOrElse("test"),
+      email = _debug_auth_string(conf, "textus.debug.auth.account.email").getOrElse("test@example.com"),
+      password = _debug_auth_string(conf, "textus.debug.auth.account.password").getOrElse("test"),
+      status = _debug_auth_string(conf, "textus.debug.auth.account.status").getOrElse("active")
+    )
+
+  private def _debug_auth_boolean(
+    conf: ResolvedConfiguration,
+    key: String,
+    default: Boolean
+  ): Boolean =
+    _debug_auth_string(conf, key).flatMap(_parse_boolean).getOrElse(default)
+
+  private def _debug_auth_string(
+    conf: ResolvedConfiguration,
+    key: String
+  ): Option[String] =
+    _debug_auth_keys(key).iterator
+      .flatMap(k => RuntimeConfig.getString(conf, k))
+      .find(_.trim.nonEmpty)
+      .map(_.trim)
+
+  private def _debug_auth_keys(key: String): Vector[String] =
+    Vector(
+      key,
+      key.replaceFirst("^textus\\.", "textus.runtime."),
+      key.replaceFirst("^textus\\.", "cncf."),
+      key.replaceFirst("^textus\\.", "cncf.runtime.")
+    ).distinct
+
+  private def _parse_boolean(value: String): Option[Boolean] =
+    value.trim.toLowerCase(java.util.Locale.ROOT) match
+      case "true" | "yes" | "on" | "1" => Some(true)
+      case "false" | "no" | "off" | "0" => Some(false)
+      case _ => None
+
+  private def _require_debug_auth_operation_mode(
+    conf: ResolvedConfiguration
+  ): Consequence[Unit] = {
+    val settings = _debug_auth_settings(conf)
+    val mode = _debug_auth_operation_mode(conf)
+    if (!settings.enabled || _allows_debug_auth_operation_mode(mode))
+      Consequence.unit
+    else
+      Consequence.configurationInvalid("textus.debug.auth.enabled is only allowed in develop or test operation mode")
+  }
+
+  private def _debug_auth_operation_mode(conf: ResolvedConfiguration): String =
+    _debug_auth_string(conf, "textus.operation-mode")
+      .getOrElse("develop")
+      .trim
+      .toLowerCase(java.util.Locale.ROOT)
+
+  private def _allows_debug_auth_operation_mode(mode: String): Boolean =
+    mode == "develop" || mode == "dev" || mode == "debug" || mode == "test"
+
+  private def _ensure_debug_user_account(
+    settings: DebugAuthSettings
+  )(using ctx: ExecutionContext): Consequence[UserAccountEntity] =
+    for
+      users <- _raw_user_accounts_by_login_name(settings.loginName)
+      user <- users.headOption match
+        case Some(existing) => Consequence.success(existing)
+        case None => _create_debug_user_account(settings)
+      _ <- _ensure_debug_credential(user, settings)
+    yield
+      user
+
+  private def _create_debug_user_account(
+    settings: DebugAuthSettings
+  )(using ctx: ExecutionContext): Consequence[UserAccountEntity] =
+    for
+      statusName <- Consequence.success(_debug_auth_account_status(settings.status))
+      status <- parseStatus(statusName)
+      _ <- requireCreatableStatus(status)
+      userRecord = Record.dataAuto(
+        "email" -> settings.email,
+        "loginName" -> settings.loginName,
+        "status" -> statusName
+      )
+      user0 <- UserAccountCreate.createWithExecutionContextC(userRecord)(using ctx)
+      user = user0.withResourceAttributes(ResourceAttributes(activationStatus = activationStatusForUserAccountStatus(status)))
+      created <- EntityStore.standard().create(user)
+      stored <- _load_user_account(created.id)
+    yield
+      stored
+
+  private def _debug_auth_account_status(value: String): String =
+    value.trim.toLowerCase(java.util.Locale.ROOT) match
+      case "active" => "registered"
+      case other => other
+
+  private def _ensure_debug_credential(
+    user: UserAccountEntity,
+    settings: DebugAuthSettings
+  )(using ctx: ExecutionContext): Consequence[Unit] =
+    for
+      credentials <- _raw_credentials_by_user(user.id)
+      _ <- credentials.headOption match
+        case Some(_) => Consequence.unit
+        case None => _create_debug_credential(user, settings)
+    yield
+      ()
+
+  private def _create_debug_credential(
+    user: UserAccountEntity,
+    settings: DebugAuthSettings
+  )(using ctx: ExecutionContext): Consequence[Unit] =
+    for
+      credential0 <- CredentialCreate.createWithExecutionContextC(
+        Record.dataAuto(
+          "userAccountId" -> user.id,
+          "passwordHash" -> _token_hash(settings.password)
+        )
+      )(using ctx)
+      credential = credential0.withResourceAttributes(ResourceAttributes(activationStatus = ActivationStatus.Active))
+      _ <- EntityStore.standard().create(credential)
+    yield
+      ()
+
+  private def _issue_debug_auto_login_session(
+    user: UserAccountEntity,
+    workingset: DebugAuthWorkingSet
+  )(using ctx: ExecutionContext): Consequence[Unit] =
+    for
+      refresh <- _issue_refresh_session_direct(
+        user.id,
+        None,
+        Some("textus-debug-auth"),
+        Some("debug auto-login"),
+        None,
+        None
+      )
+      access <- _issue_access_session_direct(
+        user.id,
+        None,
+        Some(refresh.id),
+        refresh.clientId,
+        refresh.deviceInfo,
+        refresh.ipAddress,
+        refresh.userAgent
+      )
+      _ = workingset.put(access.id.print)
+    yield
+      ()
+
+  private def _raw_credentials_by_user(
+    userid: EntityId
+  )(using ctx: ExecutionContext): Consequence[Vector[CredentialEntity]] =
+    for
+      cid <- ctx.entityStoreSpace.dataStoreCollection(CredentialQuery.collectionId)
+      result <- ctx.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))
+      credentials <- _normalize_data_store_records(result.records.toVector)
+        .filter(_.getString("userAccountId").contains(userid.print))
+        .traverse(CredentialEntity.createC)
+    yield
+      credentials
+
+  private def _raw_credentials_by_user_and_password(
+    userid: EntityId,
+    hashedpassword: String
+  )(using ctx: ExecutionContext): Consequence[Vector[CredentialEntity]] =
+    for
+      cid <- ctx.entityStoreSpace.dataStoreCollection(CredentialQuery.collectionId)
+      result <- ctx.dataStoreSpace.search(cid, DsQueryDirective(DsQuery.Empty))
+      credentials <- _normalize_data_store_records(result.records.toVector)
+        .filter(r =>
+          r.getString("userAccountId").contains(userid.print) &&
+            r.getString("passwordHash").contains(hashedpassword)
+        )
+        .traverse(CredentialEntity.createC)
+    yield
+      credentials
 
   private def _data_store_update_record(record: Record): Record =
     Record(record.fields.map { field =>
@@ -1936,7 +2179,13 @@ object ComponentFactory:
     bytes.map(b => f"${b & 0xff}%02x").mkString
 
   def userAccountAuthenticationProvider(component: Component): AuthenticationProvider =
-    new UserAccountAuthenticationProvider(component)
+    new UserAccountAuthenticationProvider(component, new DebugAuthWorkingSet())
+
+  private def _user_account_authentication_provider(
+    component: Component,
+    workingset: DebugAuthWorkingSet
+  ): AuthenticationProvider =
+    new UserAccountAuthenticationProvider(component, workingset)
 
   private def _issue_password_reset_token(
     userId: EntityId,
@@ -2011,7 +2260,10 @@ object ComponentFactory:
     _two_factor_enrollments.clear()
     _two_factor_login_challenges.clear()
 
-  private final class UserAccountAuthenticationProvider(component: Component) extends AuthenticationProvider {
+  private final class UserAccountAuthenticationProvider(
+    component: Component,
+    workingset: DebugAuthWorkingSet
+  ) extends AuthenticationProvider {
     val name: String = "textus-user-account"
 
     def authenticate(request: AuthenticationRequest)(using ctx: ExecutionContext): Consequence[Option[AuthenticationResult]] =
@@ -2025,10 +2277,10 @@ object ComponentFactory:
             case None =>
               request.refreshToken match
                 case Some(token) => authenticateRefreshToken(token).map(Some(_))
-                case None => Consequence.success(None)
+                case None => _debug_auto_login_authenticate(workingset)
 
     override def login(request: AuthenticationRequest)(using ctx: ExecutionContext): Consequence[Option[AuthenticationResult]] =
-      _provider_login(component, request)
+      _provider_login(component, request, workingset)
 
     override def logout(request: AuthenticationRequest)(using ctx: ExecutionContext): Consequence[Option[SessionContext]] =
       _request_session_id(request) match
@@ -2056,6 +2308,33 @@ object ComponentFactory:
       case m: Consequence.Failure[?] =>
         m.asInstanceOf[Consequence[Option[AuthenticationResult]]]
 
+  private def _debug_auto_login_authenticate(
+    workingset: DebugAuthWorkingSet
+  )(using ctx: ExecutionContext): Consequence[Option[AuthenticationResult]] =
+    workingset.get match
+      case Some(sessionId) =>
+        _optional_session_authenticate(sessionId).flatMap {
+          case Some(result) => Consequence.success(Some(result))
+          case None => _debug_auto_login_from_settings(workingset)
+        }
+      case None => _debug_auto_login_from_settings(workingset)
+
+  private def _debug_auto_login_from_settings(
+    workingset: DebugAuthWorkingSet
+  )(using ctx: ExecutionContext): Consequence[Option[AuthenticationResult]] =
+    workingset.settings match
+      case Some(settings) if settings.enabled && settings.autoLoginEnabled =>
+        for
+          user <- _ensure_debug_user_account(settings)
+          _ <- _issue_debug_auto_login_session(user, workingset)
+          result <- workingset.get match
+            case Some(sessionId) => _optional_session_authenticate(sessionId)
+            case None => Consequence.configurationInvalid("debug auto-login session was not issued")
+        yield
+          result
+      case _ =>
+        Consequence.success(None)
+
   private def _optional_session_logout(
     sessionId: String
   )(using ctx: ExecutionContext): Consequence[Option[SessionContext]] =
@@ -2079,9 +2358,11 @@ object ComponentFactory:
 
   private def _provider_login(
     component: Component,
-    request: AuthenticationRequest
+    request: AuthenticationRequest,
+    workingset: DebugAuthWorkingSet
   )(using ctx: ExecutionContext): Consequence[Option[AuthenticationResult]] =
     for
+      _ <- _ensure_debug_account_for_login(workingset)
       identifier <- _required_login_identifier(request)
       password <- _required_login_password(request)
       email <- _resolve_login_email(identifier)
@@ -2100,6 +2381,15 @@ object ComponentFactory:
       result <- _provider_login_result(response)
     yield
       Some(result)
+
+  private def _ensure_debug_account_for_login(
+    workingset: DebugAuthWorkingSet
+  )(using ctx: ExecutionContext): Consequence[Unit] =
+    workingset.settings match
+      case Some(settings) if settings.enabled && settings.requiresAccount =>
+        _ensure_debug_user_account(settings).map(_ => ())
+      case _ =>
+        Consequence.unit
 
   private def _anonymous_execution_context(
     ctx: ExecutionContext
@@ -2322,6 +2612,37 @@ object ComponentFactory:
       session <- RefreshSessionEntity.createC(record)
     yield
       session
+
+  private def _issue_access_session_direct(
+    userid: EntityId,
+    requestedtoken: Option[String],
+    refreshsessionid: Option[EntityId],
+    clientid: Option[String],
+    deviceinfo: Option[String],
+    ipaddress: Option[String],
+    useragent: Option[String]
+  )(using ctx: ExecutionContext): Consequence[AccessSessionEntity] =
+    for
+      now <- Consequence.success(Instant.now)
+      rawtoken <- Consequence.success(requestedtoken.filter(_.trim.nonEmpty).getOrElse(generateToken()))
+      sessionRecord = Record.dataAuto(
+        "userAccountId" -> userid,
+        "refreshSessionId" -> refreshsessionid.map(_.print),
+        "tokenHash" -> _token_hash(rawtoken),
+        "issuedAt" -> now.toString,
+        "expiresAt" -> now.plusSeconds(AccessSessionTtlSeconds.toLong).toString,
+        "lastAccessedAt" -> now.toString,
+        "clientId" -> clientid,
+        "deviceInfo" -> deviceinfo,
+        "ipAddress" -> ipaddress,
+        "userAgent" -> useragent
+      )
+      session0 <- AccessSessionCreate.createC(sessionRecord)
+      session = session0.withResourceAttributes(ResourceAttributes(activationStatus = ActivationStatus.Active))
+      created <- EntityStore.standard().create(session)
+      stored <- _load_access_session(created.id)
+    yield
+      stored
 
   private def _issue_refresh_session_direct(
     userId: EntityId,

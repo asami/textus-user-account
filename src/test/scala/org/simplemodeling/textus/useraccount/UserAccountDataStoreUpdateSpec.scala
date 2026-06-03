@@ -2,7 +2,7 @@ package org.simplemodeling.textus.useraccount
 
 import cats.~>
 import cats.syntax.all.*
-import org.goldenport.configuration.{Configuration, ConfigurationTrace, ResolvedConfiguration}
+import org.goldenport.configuration.{Configuration, ConfigurationTrace, ConfigurationValue, ResolvedConfiguration}
 import org.goldenport.cncf.action.{Action, ActionCall, FunctionalActionCall, ProcedureActionCall}
 import org.goldenport.cncf.component.{Component, ComponentCreate, ComponentOrigin}
 import org.goldenport.cncf.component.builtin.messagedeliverystub.MessageDeliveryStubComponent
@@ -33,7 +33,7 @@ import java.security.MessageDigest
 /*
  * @since   Apr.  7, 2026
  *  version Apr. 25, 2026
- * @version May. 26, 2026
+ * @version Jun.  3, 2026
  * @author  ASAMI, Tomoharu
  */
 final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
@@ -685,6 +685,141 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       restored.toOption.flatten.get.attributes.get("locale") shouldBe Some("ja-JP")
       restored.toOption.flatten.get.attributes.get("timeZone") shouldBe Some("Asia/Tokyo")
       restored.toOption.flatten.get.session.flatMap(_.sessionId) shouldBe Some(sessionId)
+    }
+
+    "seed debug account only when debug auth is enabled" in {
+      ComponentFactory.resetEphemeralSecurityStateForTest()
+      val component = _component(_debug_auth_nested_configuration(
+        seed = true,
+        autologin = false,
+        loginname = "debug-seed-test",
+        email = "debug-seed-test@example.com",
+        password = "debug-seed-password"
+      ))
+      given ExecutionContext = component.logic.executionContext()
+      val provider = component.authenticationProviders.head
+
+      val login = provider.login(AuthenticationRequest(Map(
+        "username" -> "debug-seed-test",
+        "password" -> "debug-seed-password"
+      )))
+
+      login.toOption.flatten should not be empty
+      login.toOption.flatten.get.attributes.get("loginName") shouldBe Some("debug-seed-test")
+      login.toOption.flatten.get.session.flatMap(_.sessionId) should not be empty
+    }
+
+    "seed debug account after collection bootstrap" in {
+      ComponentFactory.resetEphemeralSecurityStateForTest()
+      val component = _bootstrapped_component(_debug_auth_nested_configuration(
+        seed = true,
+        autologin = false,
+        loginname = "debug-bootstrap-test",
+        email = "debug-bootstrap-test@example.com",
+        password = "debug-bootstrap-password"
+      ))
+      given ExecutionContext = component.logic.executionContext()
+      val provider = component.authenticationProviders.head
+
+      val login = provider.login(AuthenticationRequest(Map(
+        "username" -> "debug-bootstrap-test",
+        "password" -> "debug-bootstrap-password"
+      )))
+
+      login.toOption.flatten should not be empty
+      login.toOption.flatten.get.attributes.get("loginName") shouldBe Some("debug-bootstrap-test")
+    }
+
+    "keep an existing debug user credential unchanged" in {
+      ComponentFactory.resetEphemeralSecurityStateForTest()
+      val component = _bootstrapped_component(_debug_auth_nested_configuration(
+        seed = true,
+        autologin = false,
+        loginname = "debug-existing-test",
+        email = "debug-existing-test@example.com",
+        password = "debug-new-password"
+      ))
+      given ExecutionContext = component.logic.executionContext()
+      val userid = _user_account_id("debug_existing")
+      _seed_user_account(
+        userid,
+        "debug_existing_owner",
+        "debug-existing-test@example.com",
+        loginName = Some("debug-existing-test")
+      ).toOption.isDefined shouldBe true
+      _seed_credential(userid, "debug_existing_owner", "debug-old-password").toOption.isDefined shouldBe true
+      val provider = component.authenticationProviders.head
+
+      val oldlogin = provider.login(AuthenticationRequest(Map(
+        "username" -> "debug-existing-test",
+        "password" -> "debug-old-password"
+      )))
+      val newlogin = provider.login(AuthenticationRequest(Map(
+        "username" -> "debug-existing-test",
+        "password" -> "debug-new-password"
+      )))
+
+      oldlogin.toOption.flatten should not be empty
+      newlogin.toOption.flatten shouldBe empty
+    }
+
+    "keep test login disabled without debug auth configuration" in {
+      ComponentFactory.resetEphemeralSecurityStateForTest()
+      val component = _component()
+      given ExecutionContext = component.logic.executionContext()
+      val provider = component.authenticationProviders.head
+
+      val login = provider.login(AuthenticationRequest(Map(
+        "username" -> "test",
+        "password" -> "test"
+      )))
+
+      login.toOption.flatten shouldBe empty
+    }
+
+    "auto-login restores a real debug access session" in {
+      ComponentFactory.resetEphemeralSecurityStateForTest()
+      val component = _component(_debug_auth_configuration(
+        seed = true,
+        autologin = true,
+        loginname = "debug-auto-test",
+        email = "debug-auto-test@example.com"
+      ))
+      given ExecutionContext = component.logic.executionContext()
+      val provider = component.authenticationProviders.head
+
+      val current = provider.currentSession(AuthenticationRequest(Map.empty))
+
+      current.toOption.flatten should not be empty
+      current.toOption.flatten.get.attributes.get("loginName") shouldBe Some("debug-auto-test")
+      current.toOption.flatten.get.session.flatMap(_.sessionId) should not be empty
+    }
+
+    "auto-login restores a real debug access session after collection bootstrap" in {
+      ComponentFactory.resetEphemeralSecurityStateForTest()
+      val component = _bootstrapped_component(_debug_auth_configuration(
+        seed = true,
+        autologin = true,
+        loginname = "debug-auto-bootstrap-test",
+        email = "debug-auto-bootstrap-test@example.com"
+      ))
+      given ExecutionContext = component.logic.executionContext()
+      val provider = component.authenticationProviders.head
+
+      val current = provider.currentSession(AuthenticationRequest(Map.empty))
+
+      current.toOption.flatten should not be empty
+      current.toOption.flatten.get.attributes.get("loginName") shouldBe Some("debug-auto-bootstrap-test")
+      current.toOption.flatten.get.session.flatMap(_.sessionId) should not be empty
+    }
+
+    "reject debug auth in production mode during component initialization" in {
+      ComponentFactory.resetEphemeralSecurityStateForTest()
+
+      val thrown = intercept[IllegalArgumentException] {
+        _component(_debug_auth_configuration(seed = true, autologin = false, operationmode = "production"))
+      }
+      thrown.getMessage should include ("textus.debug.auth.enabled")
     }
 
     "return provider-backed current session summary from session id" in {
@@ -1774,9 +1909,13 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
   )
 
   private def _component(): Component = {
+    _component(Configuration.empty)
+  }
+
+  private def _component(configuration: Configuration): Component = {
     val subsystem = org.goldenport.cncf.subsystem.Subsystem(
       name = "textus-user-account-datastore-probe",
-      configuration = ResolvedConfiguration(Configuration.empty, ConfigurationTrace.empty),
+      configuration = ResolvedConfiguration(configuration, ConfigurationTrace.empty),
       aliasResolver = org.goldenport.cncf.path.AliasResolver.empty,
       runMode = org.goldenport.cncf.cli.RunMode.Command
     )
@@ -1789,6 +1928,58 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
     subsystem.add(Vector(notificationStub, component))
     subsystem.components.find(_.name == component.name).getOrElse(component)
   }
+
+  private def _bootstrapped_component(configuration: Configuration): Component =
+    new org.goldenport.cncf.component.ComponentFactory().bootstrap(_component(configuration))
+
+  private def _debug_auth_configuration(
+    seed: Boolean,
+    autologin: Boolean,
+    operationmode: String = "develop",
+    loginname: String = "test",
+    email: String = "test@example.com",
+    password: String = "test"
+  ): Configuration =
+    Configuration(Map(
+      "textus.operation-mode" -> ConfigurationValue.StringValue(operationmode),
+      "textus.debug.auth.enabled" -> ConfigurationValue.StringValue("true"),
+      "textus.debug.auth.seed-account.enabled" -> ConfigurationValue.StringValue(seed.toString),
+      "textus.debug.auth.auto-login.enabled" -> ConfigurationValue.StringValue(autologin.toString),
+      "textus.debug.auth.account.login-name" -> ConfigurationValue.StringValue(loginname),
+      "textus.debug.auth.account.email" -> ConfigurationValue.StringValue(email),
+      "textus.debug.auth.account.password" -> ConfigurationValue.StringValue(password),
+      "textus.debug.auth.account.status" -> ConfigurationValue.StringValue("registered")
+    ))
+
+  private def _debug_auth_nested_configuration(
+    seed: Boolean,
+    autologin: Boolean,
+    loginname: String,
+    email: String,
+    password: String
+  ): Configuration =
+    Configuration(Map(
+      "textus" -> ConfigurationValue.ObjectValue(Map(
+        "operation-mode" -> ConfigurationValue.StringValue("develop"),
+        "debug" -> ConfigurationValue.ObjectValue(Map(
+          "auth" -> ConfigurationValue.ObjectValue(Map(
+            "enabled" -> ConfigurationValue.BooleanValue(true),
+            "seed-account" -> ConfigurationValue.ObjectValue(Map(
+              "enabled" -> ConfigurationValue.BooleanValue(seed)
+            )),
+            "auto-login" -> ConfigurationValue.ObjectValue(Map(
+              "enabled" -> ConfigurationValue.BooleanValue(autologin)
+            )),
+            "account" -> ConfigurationValue.ObjectValue(Map(
+              "login-name" -> ConfigurationValue.StringValue(loginname),
+              "email" -> ConfigurationValue.StringValue(email),
+              "password" -> ConfigurationValue.StringValue(password),
+              "status" -> ConfigurationValue.StringValue("active")
+            ))
+          ))
+        ))
+      ))
+    ))
 
   private final case class _ProbeUpdateAction(userId: EntityId) extends Action {
     override def name: String = "probeDirectUpdate"
