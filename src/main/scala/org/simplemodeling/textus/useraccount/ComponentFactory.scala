@@ -27,7 +27,7 @@ import org.goldenport.cncf.entity.{EntityQuery, EntityStore}
 import org.goldenport.cncf.entity.runtime.{EntityMemoryPolicy, EntityRuntimePlan, PartitionStrategy, WorkingSetDefinition}
 import org.goldenport.cncf.operation.CmlOperationAccess
 import org.goldenport.cncf.messagedelivery.{DeliveryChannel, UnifiedMessage, MessageDeliveryProviderRuntime}
-import org.goldenport.cncf.security.{AuthenticationProvider, AuthenticationRequest, AuthenticationResult, OperationAccessPolicy}
+import org.goldenport.cncf.security.{AuthenticationProvider, AuthenticationRequest, AuthenticationResult, OperationAccessPolicy, PublicPrincipalId, SessionId}
 import org.goldenport.cncf.unitofwork.{ExecUowM, UnitOfWorkAuthorization}
 import org.simplemodeling.model.directive.{Condition, Update}
 import org.simplemodeling.model.statemachine.ActivationStatus
@@ -43,7 +43,7 @@ import org.simplemodeling.textus.useraccount.entity.update.{AccessSession => Acc
  *  version Mar. 24, 2026
  *  version Apr. 25, 2026
  *  version May.  9, 2026
- * @version Jun.  3, 2026
+ * @version Jun.  5, 2026
  * @author  ASAMI, Tomoharu
  */
 class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePlanProvider:
@@ -444,8 +444,8 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
             yield
               OperationResponse(
                 Record.data(
-                  "userAccountId" -> user.id.print,
-                  "credentialId" -> credential.id.print,
+                  "userAccountId" -> user.id,
+                  "credentialId" -> credential.id,
                   "twoFactorRequired" -> true,
                   "challengeId" -> challenge.challengeId,
                   "channel" -> "email",
@@ -504,10 +504,10 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       yield
         OperationResponse(
           Record.data(
-            "userAccountId" -> refreshSession.userAccountId.print,
-            "accessSessionId" -> accessIssued.sessionId.print,
+            "userAccountId" -> refreshSession.userAccountId,
+            "accessSessionId" -> ComponentFactory.sessionIdValue(accessIssued.sessionId),
             "accessToken" -> accessIssued.rawToken,
-            "refreshSessionId" -> refreshIssued.sessionId.print,
+            "refreshSessionId" -> ComponentFactory.sessionIdValue(refreshIssued.sessionId),
             "refreshToken" -> refreshIssued.rawToken,
             "authenticated" -> true
           )
@@ -735,11 +735,11 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
       yield
         OperationResponse(
           Record.data(
-            "userAccountId" -> user.id.print,
-            "credentialId" -> credentialId.print,
-            "accessSessionId" -> issued.sessionId.print,
+            "userAccountId" -> user.id,
+            "credentialId" -> credentialId,
+            "accessSessionId" -> ComponentFactory.sessionIdValue(issued.sessionId),
             "accessToken" -> issued.rawToken,
-            "refreshSessionId" -> refreshIssued.sessionId.print,
+            "refreshSessionId" -> ComponentFactory.sessionIdValue(refreshIssued.sessionId),
             "refreshToken" -> refreshIssued.rawToken,
             "authenticated" -> true
           )
@@ -976,6 +976,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         now <- exec_pure(Instant.now)
         rawToken <- exec_pure(requestedToken.filter(_.trim.nonEmpty).getOrElse(ComponentFactory.generateToken()))
         sessionRecord = Record.dataAuto(
+          "id" -> ComponentFactory.generateSessionEntityId(AccessSessionQuery.collectionId).print,
           "userAccountId" -> userId,
           "refreshSessionId" -> refreshSessionId.map(_.print),
           "tokenHash" -> _token_hash(rawToken),
@@ -1005,6 +1006,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
         now <- exec_pure(Instant.now)
         rawToken <- exec_pure(requestedToken.filter(_.trim.nonEmpty).getOrElse(ComponentFactory.generateToken()))
         sessionRecord = Record.dataAuto(
+          "id" -> ComponentFactory.generateSessionEntityId(RefreshSessionQuery.collectionId).print,
           "userAccountId" -> userId,
           "tokenHash" -> _token_hash(rawToken),
           "issuedAt" -> now.toString,
@@ -2092,6 +2094,17 @@ object ComponentFactory:
   def generateToken(): String =
     UUID.randomUUID().toString.replace("-", "") + UUID.randomUUID().toString.replace("-", "")
 
+  def generateSessionEntityId(collectionid: EntityCollectionId): EntityId =
+    EntityId(
+      collectionid.major,
+      collectionid.minor,
+      collectionid,
+      entropy = Some(_generate_session_entity_entropy())
+    )
+
+  private def _generate_session_entity_entropy(): String =
+    UUID.randomUUID().toString.replace("-", "").take(12)
+
   private def _current_logged_in_user_id_from_session_id()(using ctx: ExecutionContext): Consequence[EntityId] =
     ctx.security.session.flatMap(_.sessionId).filter(_.trim.nonEmpty) match
       case Some(sessionId) =>
@@ -2292,7 +2305,10 @@ object ComponentFactory:
     override def currentSession(request: AuthenticationRequest)(using ctx: ExecutionContext): Consequence[Option[AuthenticationResult]] =
       _request_session_id(request) match
         case Some(sessionId) =>
-          _optional_session_authenticate(sessionId)
+          _optional_session_authenticate(sessionId).flatMap {
+            case Some(result) => Consequence.success(Some(result))
+            case None => _debug_auto_login_authenticate(workingset)
+          }
         case None =>
           authenticate(request)
   }
@@ -2410,13 +2426,7 @@ object ComponentFactory:
   private def _request_session_id(
     request: AuthenticationRequest
   ): Option[String] =
-    Vector(
-      "x-textus-session",
-      "sessionId",
-      "textus.session"
-    ).iterator.flatMap(request.attribute).collectFirst {
-      case value if value.trim.nonEmpty => value.trim
-    }
+    request.sessionId
 
   private def _required_login_identifier(
     request: AuthenticationRequest
@@ -2481,7 +2491,8 @@ object ComponentFactory:
     sessionId: String
   )(using ctx: ExecutionContext): Consequence[AuthenticationResult] =
     for
-      session <- _restore_access_session_by_id(sessionId)
+      typedSessionId <- SessionId.create(sessionId)
+      session <- _restore_access_session_by_id(typedSessionId.value)
       user <- _load_user_account(session.userAccountId)
     yield
       _authentication_result(user, session)
@@ -2490,7 +2501,8 @@ object ComponentFactory:
     sessionId: String
   )(using ctx: ExecutionContext): Consequence[SessionContext] =
     for
-      session <- _load_access_session_by_id(sessionId)
+      typedSessionId <- SessionId.create(sessionId)
+      session <- _load_access_session_by_id(typedSessionId.value)
       _ <- if (_is_revoked_access_session(session))
         Consequence.securityAuthenticationRequired("invalid session")
       else
@@ -2498,7 +2510,7 @@ object ComponentFactory:
       _ <- _revoke_access_session_direct(session.id)
       _ <- _revoke_linked_refresh_session(session)
     yield
-      SessionContext(sessionId = Some(session.id.print), tokenId = Some(session.id.print), tokenKind = Some("access"))
+      SessionContext(sessionId = Some(ComponentFactory.sessionIdValue(session.id)), tokenId = Some(ComponentFactory.sessionIdValue(session.id)), tokenKind = Some("access"))
 
   private def _restore_access_session_by_id(
     sessionId: String
@@ -2539,13 +2551,13 @@ object ComponentFactory:
             Record.dataAuto(
               "revokedAt" -> now.toString,
               "rotatedAt" -> now.toString,
-              "successorSessionId" -> successor.id.print
+              "successorSessionId" -> ComponentFactory.sessionIdValue(successor.id)
             )
           )
           _ <- _update_access_session_fields_direct(
             session.id,
             Record.dataAuto(
-              "refreshSessionId" -> successor.id.print,
+              "refreshSessionId" -> ComponentFactory.sessionIdValue(successor.id),
               "tokenHash" -> _token_hash(generateToken()),
               "issuedAt" -> now.toString,
               "expiresAt" -> now.plusSeconds(AccessSessionTtlSeconds.toLong).toString,
@@ -2626,6 +2638,7 @@ object ComponentFactory:
       now <- Consequence.success(Instant.now)
       rawtoken <- Consequence.success(requestedtoken.filter(_.trim.nonEmpty).getOrElse(generateToken()))
       sessionRecord = Record.dataAuto(
+        "id" -> generateSessionEntityId(AccessSessionQuery.collectionId).print,
         "userAccountId" -> userid,
         "refreshSessionId" -> refreshsessionid.map(_.print),
         "tokenHash" -> _token_hash(rawtoken),
@@ -2657,6 +2670,7 @@ object ComponentFactory:
       now <- Consequence.success(Instant.now)
       rawToken <- Consequence.success(requestedToken.filter(_.trim.nonEmpty).getOrElse(generateToken()))
       sessionRecord = Record.dataAuto(
+        "id" -> generateSessionEntityId(RefreshSessionQuery.collectionId).print,
         "userAccountId" -> userId,
         "tokenHash" -> _token_hash(rawToken),
         "issuedAt" -> now.toString,
@@ -2673,7 +2687,7 @@ object ComponentFactory:
         case Some(previousId) =>
           _update_refresh_session_fields_direct(
             previousId,
-            Record.dataAuto("successorSessionId" -> created.id.print)
+            Record.dataAuto("successorSessionId" -> ComponentFactory.sessionIdValue(created.id))
           )
         case None =>
           Consequence.unit
@@ -2840,8 +2854,9 @@ object ComponentFactory:
     accessToken: String
   ): AuthenticationResult =
     AuthenticationResult(
-      principalId = PrincipalId(user.id.print),
+      principalId = PrincipalId(_public_principal_id(user)),
       attributes = Map(
+        "publicPrincipalId" -> _public_principal_id(user),
         "userAccountId" -> user.id.print,
         "role" -> "user",
         "privilege" -> "user",
@@ -2858,8 +2873,8 @@ object ComponentFactory:
       subjectKind = SubjectKind.User,
       session = Some(
         SessionContext(
-          sessionId = Some(session.id.print),
-          tokenId = Some(session.id.print),
+          sessionId = Some(sessionIdValue(session.id)),
+          tokenId = Some(sessionIdValue(session.id)),
           tokenKind = Some("access"),
           authenticatedAt = _parse_instant(session.issuedAt),
           expiresAt = _parse_instant(session.expiresAt),
@@ -2875,8 +2890,9 @@ object ComponentFactory:
     refreshToken: String
   ): AuthenticationResult =
     AuthenticationResult(
-      principalId = PrincipalId(user.id.print),
+      principalId = PrincipalId(_public_principal_id(user)),
       attributes = Map(
+        "publicPrincipalId" -> _public_principal_id(user),
         "userAccountId" -> user.id.print,
         "role" -> "user",
         "privilege" -> "user",
@@ -2893,12 +2909,12 @@ object ComponentFactory:
       subjectKind = SubjectKind.User,
       session = Some(
         SessionContext(
-          sessionId = Some(session.id.print),
-          tokenId = Some(session.id.print),
+          sessionId = Some(sessionIdValue(session.id)),
+          tokenId = Some(sessionIdValue(session.id)),
           tokenKind = Some("refresh"),
           authenticatedAt = _parse_instant(session.issuedAt),
           expiresAt = _parse_instant(session.expiresAt),
-          refreshSessionId = Some(session.id.print),
+          refreshSessionId = Some(sessionIdValue(session.id)),
           attributes = _session_attributes(session.clientId, session.deviceInfo, session.ipAddress, session.userAgent) ++ _session_display_attributes(user.locale, user.timeZone)
         )
       )
@@ -2910,8 +2926,9 @@ object ComponentFactory:
     session: AccessSessionEntity
   ): AuthenticationResult =
     AuthenticationResult(
-      principalId = PrincipalId(user.id.print),
+      principalId = PrincipalId(_public_principal_id(user)),
       attributes = Map(
+        "publicPrincipalId" -> _public_principal_id(user),
         "userAccountId" -> user.id.print,
         "role" -> "user",
         "privilege" -> "user",
@@ -2927,8 +2944,8 @@ object ComponentFactory:
       subjectKind = SubjectKind.User,
       session = Some(
         SessionContext(
-          sessionId = Some(session.id.print),
-          tokenId = Some(session.id.print),
+          sessionId = Some(sessionIdValue(session.id)),
+          tokenId = Some(sessionIdValue(session.id)),
           tokenKind = Some("access"),
           authenticatedAt = _parse_instant(session.issuedAt),
           expiresAt = _parse_instant(session.expiresAt),
@@ -2937,6 +2954,22 @@ object ComponentFactory:
         )
       )
     )
+
+  private[textus] def sessionIdValue(
+    id: EntityId
+  ): String =
+    SessionId.unsafe(id.print).value
+
+  private def _public_principal_id(
+    user: UserAccountEntity
+  ): String =
+    PublicPrincipalId.option(
+      user.loginName
+        .map(_.trim)
+        .filter(_.nonEmpty)
+        .filter(_.length <= PublicPrincipalId.LENGTH_MAX)
+        .getOrElse(user.id.parts.entropy)
+    ).map(_.value).getOrElse("user")
 
   private def _session_attributes(
     clientId: Option[String],

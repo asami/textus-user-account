@@ -33,7 +33,7 @@ import java.security.MessageDigest
 /*
  * @since   Apr.  7, 2026
  *  version Apr. 25, 2026
- * @version Jun.  3, 2026
+ * @version Jun.  5, 2026
  * @author  ASAMI, Tomoharu
  */
 final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
@@ -160,6 +160,12 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       response.getString("accessSessionId") should not be empty
       response.getString("refreshToken") should not be empty
       response.getString("refreshSessionId") should not be empty
+      val accesssessionid = response.getString("accessSessionId").getOrElse(fail("missing accessSessionId"))
+      val refreshsessionid = response.getString("refreshSessionId").getOrElse(fail("missing refreshSessionId"))
+      accesssessionid.length should be <= 64
+      refreshsessionid.length should be <= 64
+      EntityId.parse(accesssessionid).toOption should not be empty
+      EntityId.parse(refreshsessionid).toOption should not be empty
     }
 
     "execute login under an authenticated caller context without inheriting the caller principal into provider sessions" in {
@@ -681,7 +687,9 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         "x-textus-session" -> sessionId
       )))
       restored.toOption.flatten should not be empty
-      restored.toOption.flatten.get.principalId.value shouldBe userId.print
+      restored.toOption.flatten.get.principalId.value shouldBe userId.parts.entropy
+      restored.toOption.flatten.get.principalId.value.length should be <= 64
+      restored.toOption.flatten.get.attributes.get("userAccountId") shouldBe Some(userId.print)
       restored.toOption.flatten.get.attributes.get("locale") shouldBe Some("ja-JP")
       restored.toOption.flatten.get.attributes.get("timeZone") shouldBe Some("Asia/Tokyo")
       restored.toOption.flatten.get.session.flatMap(_.sessionId) shouldBe Some(sessionId)
@@ -813,6 +821,26 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       current.toOption.flatten.get.session.flatMap(_.sessionId) should not be empty
     }
 
+    "auto-login recovers when a stale browser session cookie is present" in {
+      ComponentFactory.resetEphemeralSecurityStateForTest()
+      val component = _component(_debug_auth_configuration(
+        seed = true,
+        autologin = true,
+        loginname = "debug-auto-stale-session-test",
+        email = "debug-auto-stale-session-test@example.com"
+      ))
+      given ExecutionContext = component.logic.executionContext()
+      val provider = component.authenticationProviders.head
+
+      val current = provider.currentSession(AuthenticationRequest(Map(
+        "x-textus-session" -> "missing-session"
+      )))
+
+      current.toOption.flatten should not be empty
+      current.toOption.flatten.get.attributes.get("loginName") shouldBe Some("debug-auto-stale-session-test")
+      current.toOption.flatten.get.session.flatMap(_.sessionId) should not be empty
+    }
+
     "reject debug auth in production mode during component initialization" in {
       ComponentFactory.resetEphemeralSecurityStateForTest()
 
@@ -841,7 +869,9 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         "x-textus-session" -> sessionId
       )))
       current.toOption.flatten should not be empty
-      current.toOption.flatten.get.principalId.value shouldBe userId.print
+      current.toOption.flatten.get.principalId.value shouldBe userId.parts.entropy
+      current.toOption.flatten.get.principalId.value.length should be <= 64
+      current.toOption.flatten.get.attributes.get("userAccountId") shouldBe Some(userId.print)
       current.toOption.flatten.get.session.flatMap(_.sessionId) shouldBe Some(sessionId)
     }
 
@@ -1508,13 +1538,16 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       )
       loginBeforeEnroll.toOption.isDefined shouldBe true
       val loginRecord = loginBeforeEnroll.toOption.get.asInstanceOf[RecordResponse].record
-      val userId = loginRecord.getString("userAccountId").getOrElse(fail("missing user account id"))
-      val authenticatedctx = _with_security(fixture, "two_factor_owner", extraAttributes = Map("userAccountId" -> userId))
+      val userid = loginRecord.getAsC[EntityId]("userAccountId").toOption.flatten
+        .map(_.print)
+        .orElse(loginRecord.getString("userAccountId"))
+        .getOrElse(fail("missing user account id"))
+      val authenticatedctx = _with_security(fixture, "two_factor_owner", extraAttributes = Map("userAccountId" -> userid))
 
       val enrolled = _execute_request(
         component,
         authenticatedctx,
-        Request.ofService("User", "enrollTwoFactor", properties = List(Property("userAccountId", userId, None)))
+        Request.ofService("User", "enrollTwoFactor", properties = List(Property("userAccountId", userid, None)))
       )
       enrolled.toOption.isDefined shouldBe true
       MessageDeliveryStubComponent.deliveries.lastOption.map(_.subject) shouldBe Some(Some("Two-factor authentication enabled"))
@@ -1873,10 +1906,10 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
     _entity_id(org.simplemodeling.textus.useraccount.entity.query.Credential.collectionId, label)
 
   private def _access_session_id(label: String): EntityId =
-    _entity_id(AccessSessionQuery.collectionId, label)
+    ComponentFactory.generateSessionEntityId(AccessSessionQuery.collectionId)
 
   private def _refresh_session_id(label: String): EntityId =
-    _entity_id(RefreshSessionQuery.collectionId, label)
+    ComponentFactory.generateSessionEntityId(RefreshSessionQuery.collectionId)
 
   private def _user_profile_id(label: String): EntityId =
     _entity_id(UserProfileQuery.collectionId, label)
