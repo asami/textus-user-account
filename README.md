@@ -10,8 +10,9 @@ Textusのユーザー管理コンポーネント開発リポジトリです。
 
 ## 依存コンポーネント（ローカル開発）
 
-- build plugin: `/Users/asami/src/dev2026/sbt-cozy`
-- runtime foundation: `/Users/asami/src/dev2025/cloud-native-component-framework`
+- build plugin: local `sbt-cozy` checkout when developing the plugin itself
+- runtime foundation: selected by the `cncf` launcher and `conf/cncf/launcher.yaml`
+  when a local CNCF runtime checkout is required
 
 補足:
 
@@ -25,8 +26,18 @@ Textusのユーザー管理コンポーネント開発リポジトリです。
 ## 初期セットアップ
 
 ```bash
+SBT_COZY_DIR=/path/to/sbt-cozy \
+CNCF_DIR=/path/to/cloud-native-component-framework \
+COZY_DIR=/path/to/cozy \
+SIMPLE_MODELER_DIR=/path/to/simple-modeler \
+KALEIDOX_DIR=/path/to/kaleidox \
 ./scripts/bootstrap-local-deps.sh
 # cozy系依存を省略する場合:
+SBT_COZY_DIR=/path/to/sbt-cozy \
+CNCF_DIR=/path/to/cloud-native-component-framework \
+COZY_DIR=/path/to/cozy \
+SIMPLE_MODELER_DIR=/path/to/simple-modeler \
+KALEIDOX_DIR=/path/to/kaleidox \
 WITH_COZY=false ./scripts/bootstrap-local-deps.sh
 ```
 
@@ -42,6 +53,35 @@ sbt cozyBuildSAR
 `cozyGenerate`の入力は `src/main/cozy` 配下、最小モデルは
 `src/main/cozy/user-account.cml` を起点にする。
 
+## 開発サーバー起動
+
+標準ではインストール済みの `cncf` launcher を使う。
+
+```bash
+scripts/run-server.sh
+```
+
+launcher 自体を開発中の場合だけ、launcher側で用意した開発用コマンドを指定する。
+
+```bash
+CNCF_LAUNCHER_CMD=/path/to/dev-cncf-launcher \
+scripts/run-server.sh
+```
+
+ローカル CNCF runtime checkout を使う場合も、scriptに固定パスを書かず
+Git管理外の `.cncf/launcher.yaml` に指定する。
+
+```yaml
+runtime:
+  dev-dir: /path/to/cloud-native-component-framework
+```
+
+component repo の起動 script は CNCF runtime version や runtime classpath を
+直接解決しない。runtime selection は `cncf` launcher と launcher config の責務。
+Git管理する launcher 設定は `conf/cncf/launcher.yaml`、CNCF runtime 設定は
+`conf/cncf/config.yaml` に置く。個人環境の上書きは `.cncf/launcher.yaml` と
+`.cncf/config.yaml` に分ける。
+
 ## 配備フロー
 
 `textus-user-account` を配布用 CAR として登録する場合は、まず release 版の
@@ -52,6 +92,7 @@ ThisBuild / version := "0.1.1"
 ```
 
 Git に登録するコンポーネント情報は `project.yaml` で管理する。
+Git管理する Cozy operation defaults は `conf/cozy/config.yaml` に置き、
 `.cozy/config.yaml` は個人環境のローカルパスだけを置く。
 
 ```yaml
@@ -78,7 +119,8 @@ warehouse:
       - textus-user-account
 ```
 
-ローカル出力先は Git 管理外の `.cozy/config.yaml` に置く。
+共通のローカル出力方針は `conf/cozy/config.yaml`、個人環境のローカル出力先は
+Git 管理外の `.cozy/config.yaml` に置く。
 
 ```yaml
 publication:

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SBT_COZY_DIR="/Users/asami/src/dev2026/sbt-cozy"
-CNCF_DIR="/Users/asami/src/dev2025/cloud-native-component-framework"
-COZY_DIR="/Users/asami/src/dev2025/cozy"
-SIMPLE_MODELER_DIR="/Users/asami/src/dev2025/simple-modeler"
-KALEIDOX_DIR="/Users/asami/src/dev2025/kaleidox"
+: "${SBT_COZY_DIR:?Set SBT_COZY_DIR to the local sbt-cozy checkout.}"
+: "${CNCF_DIR:?Set CNCF_DIR to the local cloud-native-component-framework checkout.}"
+: "${COZY_DIR:?Set COZY_DIR to the local cozy checkout.}"
+: "${SIMPLE_MODELER_DIR:?Set SIMPLE_MODELER_DIR to the local simple-modeler checkout.}"
+: "${KALEIDOX_DIR:?Set KALEIDOX_DIR to the local kaleidox checkout.}"
 WITH_COZY="${WITH_COZY:-true}"
 
 echo "[bootstrap] publish sbt-cozy plugin"

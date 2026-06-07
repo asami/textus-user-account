@@ -1,0 +1,5 @@
+dev:
+  project-dev: .
+  profile: local-persistent
+  port: 19532
+  restart: true
