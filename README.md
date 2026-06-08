@@ -61,12 +61,15 @@ sbt cozyBuildSAR
 scripts/run-server.sh
 ```
 
-launcher 自体を開発中の場合だけ、launcher側で用意した開発用コマンドを指定する。
+launcher 自体を sbt project として開発中の場合だけ、launcher checkout を指定する。
 
 ```bash
-CNCF_LAUNCHER_CMD=/path/to/dev-cncf-launcher \
+CNCF_LAUNCHER_DEV_DIR=<cncf-launcher-checkout> \
 scripts/run-server.sh
 ```
+
+launcher側で実行可能なwrapperを用意している場合は、従来どおり
+`CNCF_LAUNCHER_CMD=/path/to/dev-cncf-launcher` でもよい。
 
 ローカル CNCF runtime checkout を使う場合も、scriptに固定パスを書かず
 Git管理外の `.cncf/launcher.yaml` に指定する。
