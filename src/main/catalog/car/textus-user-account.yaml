@@ -2,7 +2,7 @@ schemaVersion: 1
 kind: car
 artifactId: textus-user-account
 recommended: 0.1.2
-latestStable: 0.1.2
+latestStable: 0.1.3
 status: active
 aliases: []
 versions:
@@ -14,3 +14,11 @@ versions:
     file: repository/car/textus-user-account/0.1.2/textus-user-account-0.1.2.car
     checksum:
       sha256: ed59c3c6fb77897192158e3e73a0afebb7754939e61d2b4e772f30604b3329b6
+  - version: 0.1.3
+    channel: stable
+    status: active
+    component: textus-user-account
+    publishedAt: 2026-06-09T20:24:18.254282+09:00
+    file: repository/car/textus-user-account/0.1.3/textus-user-account-0.1.3.car
+    checksum:
+      sha256: 241fc94db9403e34a4feed84a14d6f9f68533cfd14cd1fd0dd10b67a1ad7a085

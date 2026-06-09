@@ -15,10 +15,10 @@ def sampleVersion(envName: String, fileName: String, fallback: String): String =
     }
     .getOrElse(fallback)
 
-val cncfVersion = sampleVersion("CNCF_VERSION", "cncf-version.conf", "0.4.10-SNAPSHOT")
+val cncfVersion = sampleVersion("CNCF_VERSION", "cncf-version.conf", "0.4.10")
 
 ThisBuild / organization := "org.textus"
-ThisBuild / version := "0.1.3-SNAPSHOT"
+ThisBuild / version := "0.1.3"
 
 lazy val root = (project in file("."))
   .enablePlugins(org.goldenport.cozy.CozyPlugin)
