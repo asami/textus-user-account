@@ -2,23 +2,10 @@ import org.goldenport.cozy.CozyPlugin.autoImport._
 import sbt.Keys.*
 
 val scala3Version = "3.3.7"
-def sampleVersion(envName: String, fileName: String, fallback: String): String =
-  sys.env.get(envName)
-    .orElse {
-      sys.env.get("CNCF_SAMPLES_ROOT").flatMap { root =>
-        val versionFile = file(root) / "versions" / fileName
-        if (versionFile.isFile)
-          Some(IO.read(versionFile).trim).filter(_.nonEmpty)
-        else
-          None
-      }
-    }
-    .getOrElse(fallback)
-
-val cncfVersion = sampleVersion("CNCF_VERSION", "cncf-version.conf", "0.4.10")
+val cncfVersion = "0.4.11"
 
 ThisBuild / organization := "org.textus"
-ThisBuild / version := "0.1.3"
+ThisBuild / version := "0.1.4"
 
 lazy val root = (project in file("."))
   .enablePlugins(org.goldenport.cozy.CozyPlugin)
@@ -27,6 +14,9 @@ lazy val root = (project in file("."))
     scalaVersion := scala3Version,
     scalacOptions ++= Seq("-deprecation", "-feature", "-unchecked"),
     cozyGeneratorBackend := "cozy",
+    cozyGenerationVersionOverrides ++= Map(
+      "generation.versions.cncf" -> cncfVersion
+    ),
     resolvers ++= Seq(
       Resolver.defaultLocal,
       Resolver.mavenLocal,
