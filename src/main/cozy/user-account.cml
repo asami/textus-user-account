@@ -1619,6 +1619,18 @@ Command to complete a pending two-factor login challenge.
 | challengeId | string | 1            | secret          |
 | code        | string | 1            | secret          |
 
+## UserEnrollTwoFactor
+
+### DESCRIPTION
+
+Command to enroll the current account for optional two-factor authentication.
+
+### ATTRIBUTE
+
+| name          | type     | multiplicity |
+|---------------+----------+--------------|
+| userAccountId | entityid | ?            |
+
 ## UserLogout
 
 ### DESCRIPTION
@@ -1656,6 +1668,31 @@ Command to replace an existing password with a new one.
 | userAccountId    | entityid | ?            |                 |
 | currentPassword  | string   | 1            | secret          |
 | newPassword      | string   | 1            | secret          |
+
+## UserRequestPasswordReset
+
+### DESCRIPTION
+
+Command to request a password reset token without revealing account existence.
+
+### ATTRIBUTE
+
+| name  | type   | multiplicity | confidentiality |
+|-------+--------+--------------+-----------------|
+| email | string | 1            | personal        |
+
+## UserConfirmPasswordReset
+
+### DESCRIPTION
+
+Command to confirm a password reset with an issued token and replacement password.
+
+### ATTRIBUTE
+
+| name        | type   | multiplicity | confidentiality |
+|-------------+--------+--------------+-----------------|
+| token       | string | 1            | secret          |
+| newPassword | string | 1            | secret          |
 
 ## UserRefreshAccessToken
 
@@ -1778,6 +1815,86 @@ Administrative query to list accounts with optional filters.
 | email   | string | ?            | personal        |
 | offset  | int    | ?            |                 |
 | limit   | int    | ?            |                 |
+
+# VALUE
+
+## UserProvisionalRegistrationResult
+
+### EXTENDS
+
+OperationResult
+
+## UserRegisterResult
+
+### EXTENDS
+
+OperationResult
+
+## UserPromoteToFormalRegistrationResult
+
+### EXTENDS
+
+OperationResult
+
+## UserLoginResult
+
+### EXTENDS
+
+OperationResult
+
+## UserLogoutResult
+
+### EXTENDS
+
+OperationResult
+
+## UserChangePasswordResult
+
+### EXTENDS
+
+OperationResult
+
+## UserVerifyMyEmailResult
+
+### EXTENDS
+
+OperationResult
+
+## UserVerifyMyPhoneResult
+
+### EXTENDS
+
+OperationResult
+
+## UserAccountResult
+
+### EXTENDS
+
+OperationResult
+
+## AdminCreateUserAccountResult
+
+### EXTENDS
+
+OperationResult
+
+## AdminUpdateUserStatusResult
+
+### EXTENDS
+
+OperationResult
+
+## AdminDeleteUserAccountResult
+
+### EXTENDS
+
+OperationResult
+
+## AdminListUserAccountsResult
+
+### EXTENDS
+
+OperationResult
 
 # Scenario
 

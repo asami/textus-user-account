@@ -33,7 +33,7 @@ import java.security.MessageDigest
 /*
  * @since   Apr.  7, 2026
  *  version Apr. 25, 2026
- * @version Jun.  5, 2026
+ * @version Jun. 18, 2026
  * @author  ASAMI, Tomoharu
  */
 final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
@@ -51,26 +51,26 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
     "persist direct updates for a seeded user account" in {
       val fixture = _fixture()
       given ExecutionContext = fixture.executionContext
-      val userId = _user_account_id("probe")
-      _seed_user_account(userId, "probe_principal", "probe@example.com").toOption.isDefined shouldBe true
+      val userid = _user_account_id("probe")
+      _seed_user_account(userid, "probe_principal", "probe@example.com").toOption.isDefined shouldBe true
 
-      val cid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(userId).toOption.get
-      val eid = summon[ExecutionContext].entityStoreSpace.dataStoreEntryId(userId).toOption.get
+      val cid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(userid).toOption.get
+      val eid = summon[ExecutionContext].entityStoreSpace.dataStoreEntryId(userid).toOption.get
       val datastore = summon[ExecutionContext].dataStoreSpace.dataStore(cid).toOption.get
 
       datastore.update(
         cid,
         eid,
         Record.dataAuto(
-          "email_verified_at" -> "2026-04-07T00:00:00Z",
-          "phone_number" -> "09012345678"
+          "emailVerifiedAt" -> "2026-04-07T00:00:00Z",
+          "phoneNumber" -> "09012345678"
         )
       ).toOption.isDefined shouldBe true
 
-      val stored = datastore.load(cid, eid).toOption.flatten
+      val stored = datastore.load(cid, eid).toOption.flatten.map(ComponentFactory.normalizeDataStoreRecord)
       withClue(s"stored=${stored.map(_.fields.map(f => f.key -> f.value).toVector)}") {
-        stored.flatMap(_.getString("email_verified_at")) shouldBe Some("2026-04-07T00:00:00Z")
-        stored.flatMap(_.getString("phone_number")) shouldBe Some("09012345678")
+        stored.flatMap(_.getString("emailVerifiedAt")) shouldBe Some("2026-04-07T00:00:00Z")
+        stored.flatMap(_.getString("phoneNumber")) shouldBe Some("09012345678")
       }
     }
 
@@ -78,19 +78,19 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val fixture = _fixture()
       given ExecutionContext = fixture.executionContext
       val component = _component()
-      val userId = _user_account_id("probe_action")
-      _seed_user_account(userId, "probe_principal", "probe-action@example.com").toOption.isDefined shouldBe true
+      val userid = _user_account_id("probe_action")
+      _seed_user_account(userid, "probe_principal", "probe-action@example.com").toOption.isDefined shouldBe true
 
-      val action = _ProbeUpdateAction(userId)
+      val action = _ProbeUpdateAction(userid)
       val call = component.logic.createActionCall(action, fixture.executionContext)
       component.actionEngine.execute(call).toOption.isDefined shouldBe true
 
-      val cid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(userId).toOption.get
-      val eid = summon[ExecutionContext].entityStoreSpace.dataStoreEntryId(userId).toOption.get
+      val cid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(userid).toOption.get
+      val eid = summon[ExecutionContext].entityStoreSpace.dataStoreEntryId(userid).toOption.get
       val datastore = summon[ExecutionContext].dataStoreSpace.dataStore(cid).toOption.get
-      val stored = datastore.load(cid, eid).toOption.flatten
+      val stored = datastore.load(cid, eid).toOption.flatten.map(ComponentFactory.normalizeDataStoreRecord)
       withClue(s"stored=${stored.map(_.fields.map(f => f.key -> f.value).toVector)}") {
-        stored.flatMap(_.getString("email_verified_at")) shouldBe Some("2026-04-07T00:00:00Z")
+        stored.flatMap(_.getString("emailVerifiedAt")) shouldBe Some("2026-04-07T00:00:00Z")
       }
     }
 
@@ -98,40 +98,58 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val userId = _user_account_id("typed_update")
-      _seed_user_account(userId, "probe_principal", "typed-update@example.com").toOption.isDefined shouldBe true
+      val userid = _user_account_id("typed_update")
+      _seed_user_account(userid, "probe_principal", "typed-update@example.com").toOption.isDefined shouldBe true
 
-      val action = _ProbeEntityPatchAction(userId)
-      val managerCtx = _with_security(
+      val action = _ProbeEntityPatchAction(userid)
+      val managerctx = _with_security(
         fixture,
         "probe_principal",
         privilege = SecurityContext.Privilege.ApplicationContentManager
       )
-      val call = action.createCall(ActionCall.Core(action, managerCtx, Some(component), None))
+      val call = action.createCall(ActionCall.Core(action, managerctx, Some(component), None))
       val result = component.actionEngine.execute(call)
       result.toOption.isDefined shouldBe true
 
-      val cid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(userId).toOption.get
-      val dsid = summon[ExecutionContext].entityStoreSpace.dataStoreEntryId(userId).toOption.get
+      val cid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(userid).toOption.get
+      val dsid = summon[ExecutionContext].entityStoreSpace.dataStoreEntryId(userid).toOption.get
       val datastore = summon[ExecutionContext].dataStoreSpace.dataStore(cid).toOption.get
-      val stored = datastore.load(cid, dsid).toOption.flatten
+      val stored = datastore.load(cid, dsid).toOption.flatten.map(ComponentFactory.normalizeDataStoreRecord)
       withClue(s"stored=${stored.map(_.fields.map(f => f.key -> f.value).toVector)}") {
-        stored.flatMap(_.getAny("email_verified_at")) should not be empty
+        stored.flatMap(_.getAny("emailVerifiedAt")) should not be empty
       }
+    }
+
+    "normalize datastore key aliases with last non-null value precedence" in {
+      val compatible = ComponentFactory.normalizeDataStoreRecord(
+        Record.dataAuto(
+          "email_verified_at" -> "2026-04-07T00:00:00Z",
+          "emailVerifiedAt" -> "2026-04-07T00:00:00Z"
+        )
+      )
+      compatible.getString("emailVerifiedAt") shouldBe Some("2026-04-07T00:00:00Z")
+
+      val latest = ComponentFactory.normalizeDataStoreRecord(
+        Record.dataAuto(
+          "emailVerifiedAt" -> "2026-04-07T00:00:00Z",
+          "email_verified_at" -> "2026-04-08T00:00:00Z"
+        )
+      )
+      latest.getString("emailVerifiedAt") shouldBe Some("2026-04-08T00:00:00Z")
     }
 
     "execute login with a manually built UserLogin" in {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "integration_owner"
-      val userId = _user_account_id("login_manual")
-      _seed_user_account(userId, ownerPrincipalId, "integration-manual@example.com").toOption.isDefined shouldBe true
-      _seed_credential(userId, ownerPrincipalId, "secret").toOption.isDefined shouldBe true
+      val ownerprincipalid = "integration_owner"
+      val userid = _user_account_id("login_manual")
+      _seed_user_account(userid, ownerprincipalid, "integration-manual@example.com").toOption.isDefined shouldBe true
+      _seed_credential(userid, ownerprincipalid, "secret").toOption.isDefined shouldBe true
 
       val anonymousctx = _with_security(
         fixture,
-        ownerPrincipalId,
+        ownerprincipalid,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
@@ -152,9 +170,9 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       result.toOption.isDefined shouldBe true
       val sessions = {
         val cid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId).toOption.get
-        summon[ExecutionContext].dataStoreSpace.search(cid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
+        summon[ExecutionContext].dataStoreSpace.search(cid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector.map(ComponentFactory.normalizeDataStoreRecord)
       }
-      sessions.count(_.getString("user_account_id").contains(userId.print)) shouldBe 1
+      sessions.count(_.getString("userAccountId").contains(userid.print)) shouldBe 1
       val response = result.toOption.get.asInstanceOf[RecordResponse].record
       response.getString("accessToken") should not be empty
       response.getString("accessSessionId") should not be empty
@@ -172,16 +190,16 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "integration_owner"
-      val userId = _user_account_id("login_authenticated_caller")
-      _seed_user_account(userId, ownerPrincipalId, "integration-authenticated@example.com", loginName = Some("authenticated-login")).toOption.isDefined shouldBe true
-      _seed_credential(userId, ownerPrincipalId, "secret").toOption.isDefined shouldBe true
+      val ownerprincipalid = "integration_owner"
+      val userid = _user_account_id("login_authenticated_caller")
+      _seed_user_account(userid, ownerprincipalid, "integration-authenticated@example.com", loginName = Some("authenticated-login")).toOption.isDefined shouldBe true
+      _seed_credential(userid, ownerprincipalid, "secret").toOption.isDefined shouldBe true
 
-      val staleAccessSessionId = _access_session_id("stale_authenticated_caller").print
+      val staleaccesssessionid = _access_session_id("stale_authenticated_caller").print
       val authenticatedctx = _with_security(
         fixture,
-        userId.print,
-        extraAttributes = Map("accessToken" -> staleAccessSessionId)
+        userid.print,
+        extraAttributes = Map("accessToken" -> staleaccesssessionid)
       )
       val result = _execute_request(
         component,
@@ -200,31 +218,31 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val response = result.toOption.get.asInstanceOf[RecordResponse].record
       response.getString("accessSessionId") should not be empty
       response.getString("refreshSessionId") should not be empty
-      val accessCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId).toOption.get
-      val refreshCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId).toOption.get
-      val accessRecords = summon[ExecutionContext].dataStoreSpace.search(accessCid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
-      val refreshRecords = summon[ExecutionContext].dataStoreSpace.search(refreshCid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
-      accessRecords.count(_.getString("user_account_id").contains(userId.print)) shouldBe 1
-      refreshRecords.count(_.getString("user_account_id").contains(userId.print)) shouldBe 1
+      val accesscid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId).toOption.get
+      val refreshcid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId).toOption.get
+      val accessrecords = summon[ExecutionContext].dataStoreSpace.search(accesscid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector.map(ComponentFactory.normalizeDataStoreRecord)
+      val refreshrecords = summon[ExecutionContext].dataStoreSpace.search(refreshcid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector.map(ComponentFactory.normalizeDataStoreRecord)
+      accessrecords.count(_.getString("userAccountId").contains(userid.print)) shouldBe 1
+      refreshrecords.count(_.getString("userAccountId").contains(userid.print)) shouldBe 1
     }
 
     "execute login after side-effect update wiring" in {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "integration_owner"
-      val userId = _user_account_id("login_only")
+      val ownerprincipalid = "integration_owner"
+      val userid = _user_account_id("login_only")
       _seed_user_account(
-        userId,
-        ownerPrincipalId,
+        userid,
+        ownerprincipalid,
         "integration@example.com",
         phoneNumber = Some("09012345678")
       ).toOption.isDefined shouldBe true
-      _seed_credential(userId, ownerPrincipalId, "secret").toOption.isDefined shouldBe true
+      _seed_credential(userid, ownerprincipalid, "secret").toOption.isDefined shouldBe true
 
       val anonymousctx = _with_security(
         fixture,
-        ownerPrincipalId,
+        ownerprincipalid,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
@@ -272,7 +290,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       )
       registered.toOption.isDefined shouldBe true
 
-      val lookedUp = _execute_request(
+      val lookedup = _execute_request(
         component,
         anonymousctx,
         Request.ofService(
@@ -281,8 +299,8 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
           properties = List(Property("loginName", "alice", None))
         )
       )
-      lookedUp.toOption.isDefined shouldBe true
-      val response = lookedUp.toOption.get.asInstanceOf[RecordResponse].record
+      lookedup.toOption.isDefined shouldBe true
+      val response = lookedup.toOption.get.asInstanceOf[RecordResponse].record
       response.getString("loginName").orElse(response.getString("loginName")) shouldBe Some("alice")
       response.getString("email") shouldBe Some("alice@example.com")
       response.getString("locale") shouldBe Some("ja-JP")
@@ -387,16 +405,16 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val userId = _user_account_id("lookup_suspended")
+      val userid = _user_account_id("lookup_suspended")
       _seed_user_account(
-        userId,
+        userid,
         "lookup_suspended_owner",
         "lookup-suspended@example.com",
         loginName = Some("suspended-user"),
         status = UserAccountStatus.Suspended
       ).toOption.isDefined shouldBe true
 
-      val lookedUp = _execute_request(
+      val lookedup = _execute_request(
         component,
         fixture.executionContext,
         Request.ofService(
@@ -405,42 +423,42 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
           properties = List(Property("loginName", "suspended-user", None))
         )
       )
-      lookedUp.isSuccess shouldBe false
+      lookedup.isSuccess shouldBe false
     }
 
     "resolve current user id from persisted access session token" in {
       val fixture = _fixture()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "session_owner"
-      val userId = _user_account_id("session_current")
+      val ownerprincipalid = "session_owner"
+      val userid = _user_account_id("session_current")
       val token = "token-session_owner"
-      _seed_user_account(userId, ownerPrincipalId, "session-current@example.com").toOption.isDefined shouldBe true
-      _seed_access_session(userId, ownerPrincipalId, token).toOption.isDefined shouldBe true
+      _seed_user_account(userid, ownerprincipalid, "session-current@example.com").toOption.isDefined shouldBe true
+      _seed_access_session(userid, ownerprincipalid, token).toOption.isDefined shouldBe true
 
       val authenticatedctx = _with_security(
         fixture,
-        ownerPrincipalId,
+        ownerprincipalid,
         extraAttributes = Map("accessToken" -> token)
       )
-      ComponentFactory.currentLoggedInUserId()(using authenticatedctx).toOption shouldBe Some(userId)
+      ComponentFactory.currentLoggedInUserId()(using authenticatedctx).toOption shouldBe Some(userid)
     }
 
     "load user account aggregate with its user profile" in {
       val component = _component()
-      val ownerPrincipalId = "aggregate_owner"
-      val ownerCtx = ExecutionContext.withSecurityContext(component.logic.executionContext(), _security_context(ownerPrincipalId))
-      given ExecutionContext = ownerCtx
-      val userId = _user_account_id("aggregate_profile")
-      _seed_user_account(userId, ownerPrincipalId, "aggregate-profile@example.com").toOption.isDefined shouldBe true
-      _seed_user_profile(userId, ownerPrincipalId).toOption.isDefined shouldBe true
+      val ownerprincipalid = "aggregate_owner"
+      val ownerctx = ExecutionContext.withSecurityContext(component.logic.executionContext(), _security_context(ownerprincipalid))
+      given ExecutionContext = ownerctx
+      val userid = _user_account_id("aggregate_profile")
+      _seed_user_account(userid, ownerprincipalid, "aggregate-profile@example.com").toOption.isDefined shouldBe true
+      _seed_user_profile(userid, ownerprincipalid).toOption.isDefined shouldBe true
 
       val result = _execute_request(
         component,
-        ownerCtx,
+        ownerctx,
         Request.ofService(
           "aggregate",
           "loadUserAccount",
-          properties = List(Property("id", userId.print, None))
+          properties = List(Property("id", userid.print, None))
         )
       )
       result.toOption.isDefined shouldBe true
@@ -448,56 +466,58 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
 
     "load user profile view" in {
       val component = _component()
-      val ownerPrincipalId = "view_owner"
-      val managerCtx = ExecutionContext.withSecurityContext(
+      val ownerprincipalid = "view_owner"
+      val managerctx = ExecutionContext.withSecurityContext(
         component.logic.executionContext(),
         _security_context("manager_principal", privilege = SecurityContext.Privilege.ApplicationContentManager)
       )
-      given ExecutionContext = managerCtx
-      val userId = _user_account_id("view_profile")
-      val profileId = _user_profile_id("view_profile")
-      _seed_user_account(userId, ownerPrincipalId, "view-profile@example.com").toOption.isDefined shouldBe true
-      _seed_user_profile(userId, ownerPrincipalId, Some(profileId)).toOption.isDefined shouldBe true
+      given ExecutionContext = managerctx
+      val userid = _user_account_id("view_profile")
+      val profileid = _user_profile_id("view_profile")
+      _seed_user_account(userid, ownerprincipalid, "view-profile@example.com").toOption.isDefined shouldBe true
+      _seed_user_profile(userid, ownerprincipalid, Some(profileid)).toOption.isDefined shouldBe true
 
       val result = _execute_request(
         component,
-        managerCtx,
+        managerctx,
         Request.ofService(
           "view",
           "loadUserProfile",
-          properties = List(Property("id", profileId.print, None))
+          properties = List(Property("id", profileid.print, None))
         )
       )
       result.toOption.isDefined shouldBe true
       val response = result.toOption.get.asInstanceOf[RecordResponse].record
-      val identityPresentation = response.getRecord("identity_presentation").getOrElse(fail("identity_presentation missing"))
-      identityPresentation.getString("display_name") shouldBe Some("Integration User")
-      identityPresentation.getString("nickname") shouldBe Some("integ-user")
-      identityPresentation.getString("avatar_url") shouldBe Some("https://example.com/avatar/integration-user.png")
+      val identitypresentation = ComponentFactory.normalizeDataStoreRecord(
+        response.getRecord("identityPresentation").getOrElse(fail("identityPresentation missing"))
+      )
+      identitypresentation.getString("displayName") shouldBe Some("Integration User")
+      identitypresentation.getString("nickname") shouldBe Some("integ-user")
+      identitypresentation.getString("avatarUrl") shouldBe Some("https://example.com/avatar/integration-user.png")
     }
 
     "logout should revoke only the current session pair" in {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "logout_current_owner"
-      val userId = _user_account_id("logout_current")
-      val currentAccessToken = "access-token-current"
-      val currentRefreshToken = "refresh-token-current"
-      val otherAccessToken = "access-token-other"
-      val otherRefreshToken = "refresh-token-other"
-      _seed_user_account(userId, ownerPrincipalId, "logout-current@example.com").toOption.isDefined shouldBe true
-      val currentRefreshId = _seed_refresh_session(userId, ownerPrincipalId, currentRefreshToken).toOption.get
-      _seed_access_session(userId, ownerPrincipalId, currentAccessToken, Some(currentRefreshId)).toOption.isDefined shouldBe true
-      _seed_refresh_session(userId, ownerPrincipalId, otherRefreshToken).toOption.isDefined shouldBe true
-      _seed_access_session(userId, ownerPrincipalId, otherAccessToken, None).toOption.isDefined shouldBe true
+      val ownerprincipalid = "logout_current_owner"
+      val userid = _user_account_id("logout_current")
+      val currentaccesstoken = "access-token-current"
+      val currentrefreshtoken = "refresh-token-current"
+      val otheraccesstoken = "access-token-other"
+      val otherrefreshtoken = "refresh-token-other"
+      _seed_user_account(userid, ownerprincipalid, "logout-current@example.com").toOption.isDefined shouldBe true
+      val currentrefreshid = _seed_refresh_session(userid, ownerprincipalid, currentrefreshtoken).toOption.get
+      _seed_access_session(userid, ownerprincipalid, currentaccesstoken, Some(currentrefreshid)).toOption.isDefined shouldBe true
+      _seed_refresh_session(userid, ownerprincipalid, otherrefreshtoken).toOption.isDefined shouldBe true
+      _seed_access_session(userid, ownerprincipalid, otheraccesstoken, None).toOption.isDefined shouldBe true
 
       val authenticatedctx = _with_security(
         fixture,
-        ownerPrincipalId,
+        ownerprincipalid,
         extraAttributes = Map(
-          "accessToken" -> currentAccessToken,
-          "refreshToken" -> currentRefreshToken
+          "accessToken" -> currentaccesstoken,
+          "refreshToken" -> currentrefreshtoken
         )
       )
       val result = _execute_request(
@@ -506,46 +526,46 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         Request.ofService(
           "User",
           "logout",
-          properties = List(Property("userAccountId", userId.print, None))
+          properties = List(Property("userAccountId", userid.print, None))
         )
       )
       result.toOption.isDefined shouldBe true
 
-      val refreshCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId).toOption.get
-      val refreshRecords = summon[ExecutionContext].dataStoreSpace.search(refreshCid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
-      val revokedRefreshCount = refreshRecords.count(r => r.getString("user_account_id").contains(userId.print) && r.getString("revoked_at").nonEmpty)
-      revokedRefreshCount shouldBe 1
-      val activeRefreshCount = refreshRecords.count(r => r.getString("user_account_id").contains(userId.print) && r.getString("revoked_at").isEmpty)
-      activeRefreshCount shouldBe 1
+      val refreshcid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId).toOption.get
+      val refreshrecords = summon[ExecutionContext].dataStoreSpace.search(refreshcid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector.map(ComponentFactory.normalizeDataStoreRecord)
+      val revokedrefreshcount = refreshrecords.count(r => r.getString("userAccountId").contains(userid.print) && r.getString("revokedAt").nonEmpty)
+      revokedrefreshcount shouldBe 1
+      val activerefreshcount = refreshrecords.count(r => r.getString("userAccountId").contains(userid.print) && r.getString("revokedAt").isEmpty)
+      activerefreshcount shouldBe 1
 
-      val accessCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId).toOption.get
-      val accessRecords = summon[ExecutionContext].dataStoreSpace.search(accessCid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
-      val revokedAccessCount = accessRecords.count(r => r.getString("user_account_id").contains(userId.print) && r.getString("revoked_at").nonEmpty)
-      revokedAccessCount shouldBe 1
-      val activeAccessCount = accessRecords.count(r => r.getString("user_account_id").contains(userId.print) && r.getString("revoked_at").isEmpty)
-      activeAccessCount shouldBe 1
+      val accesscid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId).toOption.get
+      val accessrecords = summon[ExecutionContext].dataStoreSpace.search(accesscid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector.map(ComponentFactory.normalizeDataStoreRecord)
+      val revokedaccesscount = accessrecords.count(r => r.getString("userAccountId").contains(userid.print) && r.getString("revokedAt").nonEmpty)
+      revokedaccesscount shouldBe 1
+      val activeaccesscount = accessrecords.count(r => r.getString("userAccountId").contains(userid.print) && r.getString("revokedAt").isEmpty)
+      activeaccesscount shouldBe 1
     }
 
     "logoutAll should revoke all session pairs for the account" in {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "logout_all_owner"
-      val userId = _user_account_id("logout_all")
-      val currentAccessToken = "access-token-all-current"
-      val currentRefreshToken = "refresh-token-all-current"
-      _seed_user_account(userId, ownerPrincipalId, "logout-all@example.com").toOption.isDefined shouldBe true
-      val refreshId1 = _seed_refresh_session(userId, ownerPrincipalId, currentRefreshToken).toOption.get
-      _seed_access_session(userId, ownerPrincipalId, currentAccessToken, Some(refreshId1)).toOption.isDefined shouldBe true
-      _seed_refresh_session(userId, ownerPrincipalId, "refresh-token-all-other").toOption.isDefined shouldBe true
-      _seed_access_session(userId, ownerPrincipalId, "access-token-all-other", None).toOption.isDefined shouldBe true
+      val ownerprincipalid = "logout_all_owner"
+      val userid = _user_account_id("logout_all")
+      val currentaccesstoken = "access-token-all-current"
+      val currentrefreshtoken = "refresh-token-all-current"
+      _seed_user_account(userid, ownerprincipalid, "logout-all@example.com").toOption.isDefined shouldBe true
+      val refreshid1 = _seed_refresh_session(userid, ownerprincipalid, currentrefreshtoken).toOption.get
+      _seed_access_session(userid, ownerprincipalid, currentaccesstoken, Some(refreshid1)).toOption.isDefined shouldBe true
+      _seed_refresh_session(userid, ownerprincipalid, "refresh-token-all-other").toOption.isDefined shouldBe true
+      _seed_access_session(userid, ownerprincipalid, "access-token-all-other", None).toOption.isDefined shouldBe true
 
       val authenticatedctx = _with_security(
         fixture,
-        ownerPrincipalId,
+        ownerprincipalid,
         extraAttributes = Map(
-          "accessToken" -> currentAccessToken,
-          "refreshToken" -> currentRefreshToken
+          "accessToken" -> currentaccesstoken,
+          "refreshToken" -> currentrefreshtoken
         )
       )
       val result = _execute_request(
@@ -554,35 +574,35 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         Request.ofService(
           "User",
           "logoutAll",
-          properties = List(Property("userAccountId", userId.print, None))
+          properties = List(Property("userAccountId", userid.print, None))
         )
       )
       result.toOption.isDefined shouldBe true
 
-      val refreshCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId).toOption.get
-      val refreshRecords = summon[ExecutionContext].dataStoreSpace.search(refreshCid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
-      val activeRefreshCount = refreshRecords.count(r => r.getString("user_account_id").contains(userId.print) && r.getString("revoked_at").isEmpty)
-      activeRefreshCount shouldBe 0
+      val refreshcid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId).toOption.get
+      val refreshrecords = summon[ExecutionContext].dataStoreSpace.search(refreshcid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector.map(ComponentFactory.normalizeDataStoreRecord)
+      val activerefreshcount = refreshrecords.count(r => r.getString("userAccountId").contains(userid.print) && r.getString("revokedAt").isEmpty)
+      activerefreshcount shouldBe 0
 
-      val accessCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId).toOption.get
-      val accessRecords = summon[ExecutionContext].dataStoreSpace.search(accessCid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
-      val activeAccessCount = accessRecords.count(r => r.getString("user_account_id").contains(userId.print) && r.getString("revoked_at").isEmpty)
-      activeAccessCount shouldBe 0
+      val accesscid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId).toOption.get
+      val accessrecords = summon[ExecutionContext].dataStoreSpace.search(accesscid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector.map(ComponentFactory.normalizeDataStoreRecord)
+      val activeaccesscount = accessrecords.count(r => r.getString("userAccountId").contains(userid.print) && r.getString("revokedAt").isEmpty)
+      activeaccesscount shouldBe 0
     }
 
     "rotate refresh token and issue a new token pair" in {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "refresh_owner"
-      val userId = _user_account_id("refresh_pair")
-      val refreshToken = "refresh-token-owner"
-      _seed_user_account(userId, ownerPrincipalId, "refresh@example.com").toOption.isDefined shouldBe true
-      val originalRefreshId = _seed_refresh_session(userId, ownerPrincipalId, refreshToken).toOption.get
+      val ownerprincipalid = "refresh_owner"
+      val userid = _user_account_id("refresh_pair")
+      val refreshtoken = "refresh-token-owner"
+      _seed_user_account(userid, ownerprincipalid, "refresh@example.com").toOption.isDefined shouldBe true
+      val originalrefreshid = _seed_refresh_session(userid, ownerprincipalid, refreshtoken).toOption.get
 
       val anonymousctx = _with_security(
         fixture,
-        ownerPrincipalId,
+        ownerprincipalid,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
@@ -592,36 +612,36 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         Request.ofService(
           "User",
           "refreshAccessToken",
-          properties = List(Property("refreshToken", refreshToken, None))
+          properties = List(Property("refreshToken", refreshtoken, None))
         )
       )
       result.toOption.isDefined shouldBe true
       val response = result.toOption.get.asInstanceOf[RecordResponse].record
       response.getString("accessToken") should not be empty
       response.getString("refreshToken") should not be empty
-      response.getString("refreshToken") should not be Some(refreshToken)
+      response.getString("refreshToken") should not be Some(refreshtoken)
 
       val cid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId).toOption.get
-      val records = summon[ExecutionContext].dataStoreSpace.search(cid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
-      val previous = records.find(_.getString("id").contains(originalRefreshId.print)).get
-      previous.getString("rotated_at") should not be empty
-      previous.getString("successor_session_id") should not be empty
-      records.count(_.getString("user_account_id").contains(userId.print)) shouldBe 2
+      val records = summon[ExecutionContext].dataStoreSpace.search(cid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector.map(ComponentFactory.normalizeDataStoreRecord)
+      val previous = records.find(_.getString("id").contains(originalrefreshid.print)).get
+      previous.getString("rotatedAt") should not be empty
+      previous.getString("successorSessionId") should not be empty
+      records.count(_.getString("userAccountId").contains(userid.print)) shouldBe 2
     }
 
     "detect refresh token reuse and revoke remaining sessions" in {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "refresh_reuse_owner"
-      val userId = _user_account_id("refresh_reuse")
-      val refreshToken = "refresh-token-reuse"
-      _seed_user_account(userId, ownerPrincipalId, "reuse@example.com").toOption.isDefined shouldBe true
-      _seed_refresh_session(userId, ownerPrincipalId, refreshToken).toOption.isDefined shouldBe true
+      val ownerprincipalid = "refresh_reuse_owner"
+      val userid = _user_account_id("refresh_reuse")
+      val refreshtoken = "refresh-token-reuse"
+      _seed_user_account(userid, ownerprincipalid, "reuse@example.com").toOption.isDefined shouldBe true
+      _seed_refresh_session(userid, ownerprincipalid, refreshtoken).toOption.isDefined shouldBe true
 
       val anonymousctx = _with_security(
         fixture,
-        ownerPrincipalId,
+        ownerprincipalid,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
@@ -632,7 +652,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         Request.ofService(
           "User",
           "refreshAccessToken",
-          properties = List(Property("refreshToken", refreshToken, None))
+          properties = List(Property("refreshToken", refreshtoken, None))
         )
       )
       first.toOption.isDefined shouldBe true
@@ -643,31 +663,31 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         Request.ofService(
           "User",
           "refreshAccessToken",
-          properties = List(Property("refreshToken", refreshToken, None))
+          properties = List(Property("refreshToken", refreshtoken, None))
         )
       )
       second.toOption.isDefined shouldBe false
 
-      val refreshCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId).toOption.get
-      val refreshRecords = summon[ExecutionContext].dataStoreSpace.search(refreshCid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
-      val activeRefreshCount = refreshRecords
-        .count(r => r.getString("user_account_id").contains(userId.print) && r.getString("revoked_at").isEmpty)
-      activeRefreshCount shouldBe 0
+      val refreshcid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId).toOption.get
+      val refreshrecords = summon[ExecutionContext].dataStoreSpace.search(refreshcid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector.map(ComponentFactory.normalizeDataStoreRecord)
+      val activerefreshcount = refreshrecords
+        .count(r => r.getString("userAccountId").contains(userid.print) && r.getString("revokedAt").isEmpty)
+      activerefreshcount shouldBe 0
 
-      val accessCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId).toOption.get
-      val accessRecords = summon[ExecutionContext].dataStoreSpace.search(accessCid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
-      val activeAccessCount = accessRecords
-        .count(r => r.getString("user_account_id").contains(userId.print) && r.getString("revoked_at").isEmpty)
-      activeAccessCount shouldBe 0
+      val accesscid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId).toOption.get
+      val accessrecords = summon[ExecutionContext].dataStoreSpace.search(accesscid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector.map(ComponentFactory.normalizeDataStoreRecord)
+      val activeaccesscount = accessrecords
+        .count(r => r.getString("userAccountId").contains(userid.print) && r.getString("revokedAt").isEmpty)
+      activeaccesscount shouldBe 0
     }
 
     "authenticate through provider login and restore the same session id" in {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val userId = _user_account_id("provider_login")
-      _seed_user_account(userId, "provider_owner", "provider-login@example.com", locale = Some("ja-JP"), timeZone = Some("Asia/Tokyo")).toOption.isDefined shouldBe true
-      _seed_credential(userId, "provider_owner", "secret").toOption.isDefined shouldBe true
+      val userid = _user_account_id("provider_login")
+      _seed_user_account(userid, "provider_owner", "provider-login@example.com", locale = Some("ja-JP"), timeZone = Some("Asia/Tokyo")).toOption.isDefined shouldBe true
+      _seed_credential(userid, "provider_owner", "secret").toOption.isDefined shouldBe true
 
       val provider = component.authenticationProviders.head
       val login = provider.login(AuthenticationRequest(Map(
@@ -676,7 +696,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       )))
       login.toOption.flatten should not be empty
       val authenticated = login.toOption.flatten.get
-      val sessionId = authenticated.session.flatMap(_.sessionId).getOrElse(fail("session id missing"))
+      val sessionid = authenticated.session.flatMap(_.sessionId).getOrElse(fail("session id missing"))
       authenticated.attributes.get("accessToken") shouldBe empty
       authenticated.attributes.get("locale") shouldBe Some("ja-JP")
       authenticated.attributes.get("timeZone") shouldBe Some("Asia/Tokyo")
@@ -684,15 +704,15 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       authenticated.session.flatMap(_.attributes.get("timeZone")) shouldBe Some("Asia/Tokyo")
 
       val restored = provider.authenticate(AuthenticationRequest(Map(
-        "x-textus-session" -> sessionId
+        "x-textus-session" -> sessionid
       )))
       restored.toOption.flatten should not be empty
-      restored.toOption.flatten.get.principalId.value shouldBe userId.parts.entropy
+      restored.toOption.flatten.get.principalId.value shouldBe userid.parts.entropy
       restored.toOption.flatten.get.principalId.value.length should be <= 64
-      restored.toOption.flatten.get.attributes.get("userAccountId") shouldBe Some(userId.print)
+      restored.toOption.flatten.get.attributes.get("userAccountId") shouldBe Some(userid.print)
       restored.toOption.flatten.get.attributes.get("locale") shouldBe Some("ja-JP")
       restored.toOption.flatten.get.attributes.get("timeZone") shouldBe Some("Asia/Tokyo")
-      restored.toOption.flatten.get.session.flatMap(_.sessionId) shouldBe Some(sessionId)
+      restored.toOption.flatten.get.session.flatMap(_.sessionId) shouldBe Some(sessionid)
     }
 
     "seed debug account only when debug auth is enabled" in {
@@ -803,6 +823,25 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       current.toOption.flatten.get.session.flatMap(_.sessionId) should not be empty
     }
 
+    "auto-login is allowed in demo mode" in {
+      ComponentFactory.resetEphemeralSecurityStateForTest()
+      val component = _component(_debug_auth_configuration(
+        seed = true,
+        autologin = true,
+        operationmode = "demo",
+        loginname = "demo",
+        email = "demo@example.com"
+      ))
+      given ExecutionContext = component.logic.executionContext()
+      val provider = component.authenticationProviders.head
+
+      val current = provider.currentSession(AuthenticationRequest(Map.empty))
+
+      current.toOption.flatten should not be empty
+      current.toOption.flatten.get.attributes.get("loginName") shouldBe Some("demo")
+      current.toOption.flatten.get.session.flatMap(_.sessionId) should not be empty
+    }
+
     "auto-login restores a real debug access session after collection bootstrap" in {
       ComponentFactory.resetEphemeralSecurityStateForTest()
       val component = _bootstrapped_component(_debug_auth_configuration(
@@ -854,47 +893,47 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val userId = _user_account_id("provider_current_session")
-      _seed_user_account(userId, "provider_owner", "provider-current@example.com").toOption.isDefined shouldBe true
-      _seed_credential(userId, "provider_owner", "secret").toOption.isDefined shouldBe true
+      val userid = _user_account_id("provider_current_session")
+      _seed_user_account(userid, "provider_owner", "provider-current@example.com").toOption.isDefined shouldBe true
+      _seed_credential(userid, "provider_owner", "secret").toOption.isDefined shouldBe true
 
       val provider = component.authenticationProviders.head
       val login = provider.login(AuthenticationRequest(Map(
         "email" -> "provider-current@example.com",
         "password" -> "secret"
       )))
-      val sessionId = login.toOption.flatten.flatMap(_.session.flatMap(_.sessionId)).getOrElse(fail("session id missing"))
+      val sessionid = login.toOption.flatten.flatMap(_.session.flatMap(_.sessionId)).getOrElse(fail("session id missing"))
 
       val current = provider.currentSession(AuthenticationRequest(Map(
-        "x-textus-session" -> sessionId
+        "x-textus-session" -> sessionid
       )))
       current.toOption.flatten should not be empty
-      current.toOption.flatten.get.principalId.value shouldBe userId.parts.entropy
+      current.toOption.flatten.get.principalId.value shouldBe userid.parts.entropy
       current.toOption.flatten.get.principalId.value.length should be <= 64
-      current.toOption.flatten.get.attributes.get("userAccountId") shouldBe Some(userId.print)
-      current.toOption.flatten.get.session.flatMap(_.sessionId) shouldBe Some(sessionId)
+      current.toOption.flatten.get.attributes.get("userAccountId") shouldBe Some(userid.print)
+      current.toOption.flatten.get.session.flatMap(_.sessionId) shouldBe Some(sessionid)
     }
 
     "revoke provider session on logout so subsequent restore fails" in {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val userId = _user_account_id("provider_logout")
-      _seed_user_account(userId, "provider_owner", "provider-logout@example.com").toOption.isDefined shouldBe true
-      _seed_credential(userId, "provider_owner", "secret").toOption.isDefined shouldBe true
+      val userid = _user_account_id("provider_logout")
+      _seed_user_account(userid, "provider_owner", "provider-logout@example.com").toOption.isDefined shouldBe true
+      _seed_credential(userid, "provider_owner", "secret").toOption.isDefined shouldBe true
 
       val provider = component.authenticationProviders.head
-      val sessionId = provider.login(AuthenticationRequest(Map(
+      val sessionid = provider.login(AuthenticationRequest(Map(
         "email" -> "provider-logout@example.com",
         "password" -> "secret"
       ))).toOption.flatten.flatMap(_.session.flatMap(_.sessionId)).getOrElse(fail("session id missing"))
 
       provider.logout(AuthenticationRequest(Map(
-        "x-textus-session" -> sessionId
-      ))).toOption.flatten.flatMap(_.sessionId) shouldBe Some(sessionId)
+        "x-textus-session" -> sessionid
+      ))).toOption.flatten.flatMap(_.sessionId) shouldBe Some(sessionid)
 
       provider.authenticate(AuthenticationRequest(Map(
-        "x-textus-session" -> sessionId
+        "x-textus-session" -> sessionid
       ))).toOption.flatten.isDefined shouldBe false
     }
 
@@ -956,53 +995,55 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val userId = _user_account_id("provider_rotate")
-      _seed_user_account(userId, "provider_owner", "provider-rotate@example.com").toOption.isDefined shouldBe true
-      val refreshId = _seed_refresh_session(userId, "provider_owner", "refresh-token-provider").toOption.get
-      val accessId = _seed_access_session(userId, "provider_owner", "access-token-provider", Some(refreshId)).toOption.get
+      val userid = _user_account_id("provider_rotate")
+      _seed_user_account(userid, "provider_owner", "provider-rotate@example.com").toOption.isDefined shouldBe true
+      val refreshid = _seed_refresh_session(userid, "provider_owner", "refresh-token-provider").toOption.get
+      val accessid = _seed_access_session(userid, "provider_owner", "access-token-provider", Some(refreshid)).toOption.get
 
-      val accessCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId).toOption.get
-      val accessDsId = summon[ExecutionContext].entityStoreSpace.dataStoreEntryId(accessId).toOption.get
-      val accessDatastore = summon[ExecutionContext].dataStoreSpace.dataStore(accessCid).toOption.get
-      accessDatastore.update(
-        accessCid,
-        accessDsId,
-        Record.dataAuto("expires_at" -> "2026-04-01T00:00:00Z")
+      val accesscid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(AccessSessionQuery.collectionId).toOption.get
+      val accessdsid = summon[ExecutionContext].entityStoreSpace.dataStoreEntryId(accessid).toOption.get
+      val accessdatastore = summon[ExecutionContext].dataStoreSpace.dataStore(accesscid).toOption.get
+      accessdatastore.update(
+        accesscid,
+        accessdsid,
+        Record.dataAuto("expiresAt" -> "2026-04-01T00:00:00Z")
       ).toOption.isDefined shouldBe true
 
       val provider = component.authenticationProviders.head
       val restored = provider.authenticate(AuthenticationRequest(Map(
-        "x-textus-session" -> accessId.print
+        "x-textus-session" -> accessid.print
       )))
       restored.toOption.flatten should not be empty
-      restored.toOption.flatten.get.session.flatMap(_.sessionId) shouldBe Some(accessId.print)
+      restored.toOption.flatten.get.session.flatMap(_.sessionId) shouldBe Some(accessid.print)
 
-      val refreshCid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId).toOption.get
-      val refreshRecords = summon[ExecutionContext].dataStoreSpace.search(refreshCid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector
-      val previous = refreshRecords.find(_.getString("id").contains(refreshId.print)).getOrElse(fail("previous refresh missing"))
-      previous.getString("rotated_at") should not be empty
-      previous.getString("successor_session_id") should not be empty
+      val refreshcid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(RefreshSessionQuery.collectionId).toOption.get
+      val refreshrecords = summon[ExecutionContext].dataStoreSpace.search(refreshcid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).toOption.get.records.toVector.map(ComponentFactory.normalizeDataStoreRecord)
+      val previous = refreshrecords.find(_.getString("id").contains(refreshid.print)).getOrElse(fail("previous refresh missing"))
+      previous.getString("rotatedAt") should not be empty
+      previous.getString("successorSessionId") should not be empty
 
-      val rotatedAccess = accessDatastore.load(accessCid, accessDsId).toOption.flatten.getOrElse(fail("rotated access missing"))
-      rotatedAccess.getString("refreshSessionId") should not be Some(refreshId.print)
-      rotatedAccess.getString("revoked_at") shouldBe empty
+      val rotatedaccess = accessdatastore.load(accesscid, accessdsid).toOption.flatten
+        .map(ComponentFactory.normalizeDataStoreRecord)
+        .getOrElse(fail("rotated access missing"))
+      rotatedaccess.getString("refreshSessionId") should not be Some(refreshid.print)
+      rotatedaccess.getString("revokedAt") shouldBe empty
     }
 
     "persist login-like patch after raw entity lookup under owner context without access token" in {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "integration_owner"
-      val userId = _user_account_id("login_patch")
-      _seed_user_account(userId, ownerPrincipalId, "integration@example.com").toOption.isDefined shouldBe true
+      val ownerprincipalid = "integration_owner"
+      val userid = _user_account_id("login_patch")
+      _seed_user_account(userid, ownerprincipalid, "integration@example.com").toOption.isDefined shouldBe true
 
       val anonymousctx = _with_security(
         fixture,
-        ownerPrincipalId,
+        ownerprincipalid,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
-      val action = _ProbeEntityPatchAction(userId)
+      val action = _ProbeEntityPatchAction(userid)
       val call = action.createCall(ActionCall.Core(action, anonymousctx, Some(component), None))
       val result = component.actionEngine.execute(call)
       result.toOption.isDefined shouldBe true
@@ -1012,17 +1053,17 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "integration_owner"
-      val userId = _user_account_id("login_workingset")
-      _seed_user_account(userId, ownerPrincipalId, "integration@example.com").toOption.isDefined shouldBe true
+      val ownerprincipalid = "integration_owner"
+      val userid = _user_account_id("login_workingset")
+      _seed_user_account(userid, ownerprincipalid, "integration@example.com").toOption.isDefined shouldBe true
 
       val anonymousctx = _with_security(
         fixture,
-        ownerPrincipalId,
+        ownerprincipalid,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
-      val action = _ProbeWorkingSetUpsertAction(userId)
+      val action = _ProbeWorkingSetUpsertAction(userid)
       val call = action.createCall(ActionCall.Core(action, anonymousctx, Some(component), None))
       val result = component.actionEngine.execute(call)
       result.toOption.isDefined shouldBe true
@@ -1032,17 +1073,17 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "integration_owner"
-      val userId = _user_account_id("login_shape")
-      _seed_user_account(userId, ownerPrincipalId, "integration@example.com").toOption.isDefined shouldBe true
+      val ownerprincipalid = "integration_owner"
+      val userid = _user_account_id("login_shape")
+      _seed_user_account(userid, ownerprincipalid, "integration@example.com").toOption.isDefined shouldBe true
 
       val anonymousctx = _with_security(
         fixture,
-        ownerPrincipalId,
+        ownerprincipalid,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
-      val action = _ProbeLoginWorkingSetOnlyAction(userId)
+      val action = _ProbeLoginWorkingSetOnlyAction(userid)
       val call = action.createCall(ActionCall.Core(action, anonymousctx, Some(component), None))
       val result = component.actionEngine.execute(call)
       result.toOption.isDefined shouldBe true
@@ -1052,17 +1093,17 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "integration_owner"
-      val userId = _user_account_id("login_side_effects")
-      _seed_user_account(userId, ownerPrincipalId, "integration@example.com").toOption.isDefined shouldBe true
+      val ownerprincipalid = "integration_owner"
+      val userid = _user_account_id("login_side_effects")
+      _seed_user_account(userid, ownerprincipalid, "integration@example.com").toOption.isDefined shouldBe true
 
-      val managerCtx = _with_security(
+      val managerctx = _with_security(
         fixture,
-        ownerPrincipalId,
+        ownerprincipalid,
         privilege = SecurityContext.Privilege.ApplicationContentManager
       )
-      val action = _ProbeLoginSideEffectsAction(userId)
-      val call = action.createCall(ActionCall.Core(action, managerCtx, Some(component), None))
+      val action = _ProbeLoginSideEffectsAction(userid)
+      val call = action.createCall(ActionCall.Core(action, managerctx, Some(component), None))
       val result = component.actionEngine.execute(call)
       result.toOption.isDefined shouldBe true
     }
@@ -1071,14 +1112,14 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "integration_owner"
-      val userId = _user_account_id("login_probe_user_proc")
-      _seed_user_account(userId, ownerPrincipalId, "integration-user-proc@example.com").toOption.isDefined shouldBe true
-      _seed_credential(userId, ownerPrincipalId, "secret").toOption.isDefined shouldBe true
+      val ownerprincipalid = "integration_owner"
+      val userid = _user_account_id("login_probe_user_proc")
+      _seed_user_account(userid, ownerprincipalid, "integration-user-proc@example.com").toOption.isDefined shouldBe true
+      _seed_credential(userid, ownerprincipalid, "secret").toOption.isDefined shouldBe true
 
       val anonymousctx = _with_security(
         fixture,
-        ownerPrincipalId,
+        ownerprincipalid,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
@@ -1092,14 +1133,14 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "integration_owner"
-      val userId = _user_account_id("login_probe_user_only")
-      _seed_user_account(userId, ownerPrincipalId, "integration-user-only@example.com").toOption.isDefined shouldBe true
-      _seed_credential(userId, ownerPrincipalId, "secret").toOption.isDefined shouldBe true
+      val ownerprincipalid = "integration_owner"
+      val userid = _user_account_id("login_probe_user_only")
+      _seed_user_account(userid, ownerprincipalid, "integration-user-only@example.com").toOption.isDefined shouldBe true
+      _seed_credential(userid, ownerprincipalid, "secret").toOption.isDefined shouldBe true
 
       val anonymousctx = _with_security(
         fixture,
-        ownerPrincipalId,
+        ownerprincipalid,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
@@ -1113,17 +1154,17 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "integration_owner"
-      val userId = _user_account_id("login_probe_id_compare")
-      _seed_user_account(userId, ownerPrincipalId, "integration-id-compare@example.com").toOption.isDefined shouldBe true
+      val ownerprincipalid = "integration_owner"
+      val userid = _user_account_id("login_probe_id_compare")
+      _seed_user_account(userid, ownerprincipalid, "integration-id-compare@example.com").toOption.isDefined shouldBe true
 
       val anonymousctx = _with_security(
         fixture,
-        ownerPrincipalId,
+        ownerprincipalid,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
-      val action = _ProbeCompareRecoveredUserIdAction(userId, "integration-id-compare@example.com")
+      val action = _ProbeCompareRecoveredUserIdAction(userid, "integration-id-compare@example.com")
       val call = action.createCall(ActionCall.Core(action, anonymousctx, Some(component), None))
       val result = component.actionEngine.execute(call)
       result.toOption.isDefined shouldBe true
@@ -1133,13 +1174,13 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "integration_owner"
-      val userId = _user_account_id("login_probe_dump")
-      _seed_user_account(userId, ownerPrincipalId, "integration-dump@example.com").toOption.isDefined shouldBe true
+      val ownerprincipalid = "integration_owner"
+      val userid = _user_account_id("login_probe_dump")
+      _seed_user_account(userid, ownerprincipalid, "integration-dump@example.com").toOption.isDefined shouldBe true
 
       val anonymousctx = _with_security(
         fixture,
-        ownerPrincipalId,
+        ownerprincipalid,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
@@ -1153,17 +1194,17 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "integration_owner"
-      val userId = _user_account_id("login_probe_typed_load")
-      _seed_user_account(userId, ownerPrincipalId, "integration-typed-load@example.com").toOption.isDefined shouldBe true
+      val ownerprincipalid = "integration_owner"
+      val userid = _user_account_id("login_probe_typed_load")
+      _seed_user_account(userid, ownerprincipalid, "integration-typed-load@example.com").toOption.isDefined shouldBe true
 
       val anonymousctx = _with_security(
         fixture,
-        ownerPrincipalId,
+        ownerprincipalid,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
-      val action = _ProbeTypedUserLoadAction(userId)
+      val action = _ProbeTypedUserLoadAction(userid)
       val call = action.createCall(ActionCall.Core(action, anonymousctx, Some(component), None))
       val result = component.actionEngine.execute(call)
       result.toOption.isDefined shouldBe true
@@ -1173,14 +1214,14 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "integration_owner"
-      val userId = _user_account_id("login_probe_raw")
-      _seed_user_account(userId, ownerPrincipalId, "integration-raw@example.com").toOption.isDefined shouldBe true
-      _seed_credential(userId, ownerPrincipalId, "secret").toOption.isDefined shouldBe true
+      val ownerprincipalid = "integration_owner"
+      val userid = _user_account_id("login_probe_raw")
+      _seed_user_account(userid, ownerprincipalid, "integration-raw@example.com").toOption.isDefined shouldBe true
+      _seed_credential(userid, ownerprincipalid, "secret").toOption.isDefined shouldBe true
 
       val anonymousctx = _with_security(
         fixture,
-        ownerPrincipalId,
+        ownerprincipalid,
         withAccessToken = false,
         extraAttributes = Map("anonymous" -> "true")
       )
@@ -1194,18 +1235,18 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val fixture = _fixture()
       val component = _component()
       given ExecutionContext = fixture.executionContext
-      val ownerPrincipalId = "integration_owner"
-      val userId = _user_account_id("integration")
+      val ownerprincipalid = "integration_owner"
+      val userid = _user_account_id("integration")
       _seed_user_account(
-        userId,
-        ownerPrincipalId,
+        userid,
+        ownerprincipalid,
         "integration@example.com",
         phoneNumber = Some("09012345678")
       ).toOption.isDefined shouldBe true
-      _seed_credential(userId, ownerPrincipalId, "secret").toOption.isDefined shouldBe true
+      _seed_credential(userid, ownerprincipalid, "secret").toOption.isDefined shouldBe true
 
-      val authenticatedctx = _with_security(fixture, userId.print)
-      ComponentFactory.addLoggedInUserForTest(userId)(using authenticatedctx).toOption.isDefined shouldBe true
+      val authenticatedctx = _with_security(fixture, userid.print)
+      ComponentFactory.addLoggedInUserForTest(userid)(using authenticatedctx).toOption.isDefined shouldBe true
       _execute_request(
         component,
         authenticatedctx,
@@ -1231,33 +1272,33 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         )
       ).toOption.isDefined shouldBe true
 
-      val cid = fixture.executionContext.entityStoreSpace.dataStoreCollection(userId).toOption.get
-      val dsid = fixture.executionContext.entityStoreSpace.dataStoreEntryId(userId).toOption.get
+      val cid = fixture.executionContext.entityStoreSpace.dataStoreCollection(userid).toOption.get
+      val dsid = fixture.executionContext.entityStoreSpace.dataStoreEntryId(userid).toOption.get
       val datastore = fixture.executionContext.dataStoreSpace.dataStore(cid).toOption.get
-      val stored = datastore.load(cid, dsid).toOption.flatten
+      val stored = datastore.load(cid, dsid).toOption.flatten.map(ComponentFactory.normalizeDataStoreRecord)
       withClue(s"stored=${stored.map(_.fields.map(f => f.key -> f.value).toVector)}") {
-        stored.flatMap(_.getAny("email_verified_at")) should not be empty
-        stored.flatMap(_.getAny("phone_verified_at")) should not be empty
-        stored.flatMap(_.getString("phone_number")) shouldBe Some("09012345678")
-        stored.flatMap(_.getAny("last_login_at")) shouldBe empty
+        stored.flatMap(_.getAny("emailVerifiedAt")) should not be empty
+        stored.flatMap(_.getAny("phoneVerifiedAt")) should not be empty
+        stored.flatMap(_.getString("phoneNumber")) shouldBe Some("09012345678")
+        stored.flatMap(_.getAny("lastLoginAt")) shouldBe empty
       }
     }
 
     "reject email verification when the current account email is already verified" in {
       val fixture = _fixture()
       val component = _component()
-      val userId = _user_account_id("already_verified_email")
-      val ownerPrincipalId = "already_verified_owner"
-      given ExecutionContext = fixture.contextFor(_security_context(ownerPrincipalId))
+      val userid = _user_account_id("already_verified_email")
+      val ownerprincipalid = "already_verified_owner"
+      given ExecutionContext = fixture.contextFor(_security_context(ownerprincipalid))
       _seed_user_account(
-        userId,
-        ownerPrincipalId,
+        userid,
+        ownerprincipalid,
         "already-verified-email@example.com",
         emailVerifiedAt = Some(java.time.Instant.parse("2026-04-08T00:00:00Z"))
       ).toOption.isDefined shouldBe true
 
-      val authenticatedctx = _with_security(fixture, userId.print)
-      ComponentFactory.addLoggedInUserForTest(userId)(using authenticatedctx).toOption.isDefined shouldBe true
+      val authenticatedctx = _with_security(fixture, userid.print)
+      ComponentFactory.addLoggedInUserForTest(userid)(using authenticatedctx).toOption.isDefined shouldBe true
 
       val result = _execute_request(
         component,
@@ -1277,13 +1318,13 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
     "reject phone verification when the current account does not have a stored phone number" in {
       val fixture = _fixture()
       val component = _component()
-      val userId = _user_account_id("missing_phone")
-      val ownerPrincipalId = "missing_phone_owner"
-      given ExecutionContext = fixture.contextFor(_security_context(ownerPrincipalId))
-      _seed_user_account(userId, ownerPrincipalId, "missing-phone@example.com").toOption.isDefined shouldBe true
+      val userid = _user_account_id("missing_phone")
+      val ownerprincipalid = "missing_phone_owner"
+      given ExecutionContext = fixture.contextFor(_security_context(ownerprincipalid))
+      _seed_user_account(userid, ownerprincipalid, "missing-phone@example.com").toOption.isDefined shouldBe true
 
-      val authenticatedctx = _with_security(fixture, userId.print)
-      ComponentFactory.addLoggedInUserForTest(userId)(using authenticatedctx).toOption.isDefined shouldBe true
+      val authenticatedctx = _with_security(fixture, userid.print)
+      ComponentFactory.addLoggedInUserForTest(userid)(using authenticatedctx).toOption.isDefined shouldBe true
 
       val result = _execute_request(
         component,
@@ -1304,18 +1345,18 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
     "reject phone verification when the requested phone number does not match the current account" in {
       val fixture = _fixture()
       val component = _component()
-      val userId = _user_account_id("phone_mismatch")
-      val ownerPrincipalId = "phone_mismatch_owner"
-      given ExecutionContext = fixture.contextFor(_security_context(ownerPrincipalId))
+      val userid = _user_account_id("phone_mismatch")
+      val ownerprincipalid = "phone_mismatch_owner"
+      given ExecutionContext = fixture.contextFor(_security_context(ownerprincipalid))
       _seed_user_account(
-        userId,
-        ownerPrincipalId,
+        userid,
+        ownerprincipalid,
         "phone-mismatch@example.com",
         phoneNumber = Some("09000000000")
       ).toOption.isDefined shouldBe true
 
-      val authenticatedctx = _with_security(fixture, userId.print)
-      ComponentFactory.addLoggedInUserForTest(userId)(using authenticatedctx).toOption.isDefined shouldBe true
+      val authenticatedctx = _with_security(fixture, userid.print)
+      ComponentFactory.addLoggedInUserForTest(userid)(using authenticatedctx).toOption.isDefined shouldBe true
 
       val result = _execute_request(
         component,
@@ -1336,68 +1377,68 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
     "persist suspension details through actual status update operations" in {
       val fixture = _fixture()
       val component = _component()
-      val managerCtx = _with_security(
+      val managerctx = _with_security(
         fixture,
         SecurityContext.Privilege.ApplicationContentManager.principalId.value,
         privilege = SecurityContext.Privilege.ApplicationContentManager
       )
-      given ExecutionContext = managerCtx
-      val userId = _user_account_id("suspend_restore")
-      _seed_user_account(userId, "integration_owner", "suspend-restore@example.com").toOption.isDefined shouldBe true
+      given ExecutionContext = managerctx
+      val userid = _user_account_id("suspend_restore")
+      _seed_user_account(userid, "integration_owner", "suspend-restore@example.com").toOption.isDefined shouldBe true
 
       _execute_request(
         component,
-        managerCtx,
+        managerctx,
         Request.ofService(
           "Management",
           "updateUserStatus",
           properties = List(
-            Property("userAccountId", userId.print, None),
+            Property("userAccountId", userid.print, None),
             Property("status", "suspended", None),
             Property("suspensionReason", "policy_violation", None)
           )
         )
       ).toOption.isDefined shouldBe true
 
-      val cid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(userId).toOption.get
-      val dsid = summon[ExecutionContext].entityStoreSpace.dataStoreEntryId(userId).toOption.get
+      val cid = summon[ExecutionContext].entityStoreSpace.dataStoreCollection(userid).toOption.get
+      val dsid = summon[ExecutionContext].entityStoreSpace.dataStoreEntryId(userid).toOption.get
       val datastore = summon[ExecutionContext].dataStoreSpace.dataStore(cid).toOption.get
-      val suspended = datastore.load(cid, dsid).toOption.flatten
-      val suspendedSummary = suspended.map(_.fields.map(f => f.key -> Option(f.value).map(_.toString).orNull).toVector)
-      withClue(s"suspended=${suspendedSummary}") {
+      val suspended = datastore.load(cid, dsid).toOption.flatten.map(ComponentFactory.normalizeDataStoreRecord)
+      val suspendedsummary = suspended.map(_.fields.map(f => f.key -> Option(f.value).map(_.toString).orNull).toVector)
+      withClue(s"suspended=${suspendedsummary}") {
         suspended.flatMap(_.getAny("status")).map(_.toString.contains("suspended")) shouldBe Some(true)
-        suspended.flatMap(_.getAny("suspended_at")) should not be empty
-        suspended.flatMap(_.getString("suspended_by")) shouldBe Some(SecurityContext.Privilege.ApplicationContentManager.principalId.value)
-        suspended.flatMap(_.getString("suspension_reason")) shouldBe Some("policy_violation")
+        suspended.flatMap(_.getAny("suspendedAt")) should not be empty
+        suspended.flatMap(_.getString("suspendedBy")) shouldBe Some(SecurityContext.Privilege.ApplicationContentManager.principalId.value)
+        suspended.flatMap(_.getString("suspensionReason")) shouldBe Some("policy_violation")
       }
 
       _execute_request(
         component,
-        managerCtx,
+        managerctx,
         Request.ofService(
           "Management",
           "updateUserStatus",
           properties = List(
-            Property("userAccountId", userId.print, None),
+            Property("userAccountId", userid.print, None),
             Property("status", "registered", None)
           )
         )
       ).toOption.isDefined shouldBe true
 
-      val restored = datastore.load(cid, dsid).toOption.flatten
-      val restoredSummary = restored.map(r =>
+      val restored = datastore.load(cid, dsid).toOption.flatten.map(ComponentFactory.normalizeDataStoreRecord)
+      val restoredsummary = restored.map(r =>
         Vector(
           "status" -> r.getAny("status").flatMap(x => Option(x).map(_.toString)).orNull,
-          "suspended_at" -> r.getAny("suspended_at").flatMap(x => Option(x).map(_.toString)).orNull,
-          "suspended_by" -> r.getAny("suspended_by").flatMap(x => Option(x).map(_.toString)).orNull,
-          "suspension_reason" -> r.getAny("suspension_reason").flatMap(x => Option(x).map(_.toString)).orNull
+          "suspendedAt" -> r.getAny("suspendedAt").flatMap(x => Option(x).map(_.toString)).orNull,
+          "suspendedBy" -> r.getAny("suspendedBy").flatMap(x => Option(x).map(_.toString)).orNull,
+          "suspensionReason" -> r.getAny("suspensionReason").flatMap(x => Option(x).map(_.toString)).orNull
         )
       )
-      withClue(s"restored=${restoredSummary}") {
+      withClue(s"restored=${restoredsummary}") {
         restored.flatMap(_.getAny("status")).map(_.toString.contains("registered")) shouldBe Some(true)
-        restored.flatMap(_.getAny("suspended_at")).forall(java.util.Objects.isNull) shouldBe true
-        restored.flatMap(_.getAny("suspended_by")).forall(java.util.Objects.isNull) shouldBe true
-        restored.flatMap(_.getAny("suspension_reason")).forall(java.util.Objects.isNull) shouldBe true
+        restored.flatMap(_.getAny("suspendedAt")).forall(java.util.Objects.isNull) shouldBe true
+        restored.flatMap(_.getAny("suspendedBy")).forall(java.util.Objects.isNull) shouldBe true
+        restored.flatMap(_.getAny("suspensionReason")).forall(java.util.Objects.isNull) shouldBe true
       }
     }
   }
@@ -1430,7 +1471,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       )
       registered.toOption.isDefined shouldBe true
 
-      val acceptedKnown = _execute_request(
+      val acceptedknown = _execute_request(
         component,
         anonymousctx,
         Request.ofService(
@@ -1439,7 +1480,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
           properties = List(Property("email", "reset-user@example.com", None))
         )
       )
-      val acceptedUnknown = _execute_request(
+      val acceptedunknown = _execute_request(
         component,
         anonymousctx,
         Request.ofService(
@@ -1448,11 +1489,11 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
           properties = List(Property("email", "missing@example.com", None))
         )
       )
-      acceptedKnown.toOption.isDefined shouldBe true
-      acceptedUnknown.toOption.isDefined shouldBe true
-      val resetDelivery = MessageDeliveryStubComponent.deliveries.lastOption.getOrElse(fail("missing reset notification"))
-      resetDelivery.recipient shouldBe "reset-user@example.com"
-      val resettoken = resetDelivery.attributes.getOrElse("resetToken", fail("missing reset token"))
+      acceptedknown.toOption.isDefined shouldBe true
+      acceptedunknown.toOption.isDefined shouldBe true
+      val resetdelivery = MessageDeliveryStubComponent.deliveries.lastOption.getOrElse(fail("missing reset notification"))
+      resetdelivery.recipient shouldBe "reset-user@example.com"
+      val resettoken = resetdelivery.attributes.getOrElse("resetToken", fail("missing reset token"))
 
       val confirm = _execute_request(
         component,
@@ -1468,7 +1509,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       )
       confirm.toOption.isDefined shouldBe true
 
-      val oldLogin = _execute_request(
+      val oldlogin = _execute_request(
         component,
         anonymousctx,
         Request.ofService(
@@ -1480,9 +1521,9 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
           )
         )
       )
-      oldLogin.isSuccess shouldBe false
+      oldlogin.isSuccess shouldBe false
 
-      val newLogin = _execute_request(
+      val newlogin = _execute_request(
         component,
         anonymousctx,
         Request.ofService(
@@ -1494,7 +1535,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
           )
         )
       )
-      newLogin.toOption.isDefined shouldBe true
+      newlogin.toOption.isDefined shouldBe true
     }
 
     "enroll two factor and require challenge completion for subsequent login" in {
@@ -1524,7 +1565,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       )
       registered.toOption.isDefined shouldBe true
 
-      val loginBeforeEnroll = _execute_request(
+      val loginbeforeenroll = _execute_request(
         component,
         anonymousctx,
         Request.ofService(
@@ -1536,11 +1577,11 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
           )
         )
       )
-      loginBeforeEnroll.toOption.isDefined shouldBe true
-      val loginRecord = loginBeforeEnroll.toOption.get.asInstanceOf[RecordResponse].record
-      val userid = loginRecord.getAsC[EntityId]("userAccountId").toOption.flatten
+      loginbeforeenroll.toOption.isDefined shouldBe true
+      val loginrecord = loginbeforeenroll.toOption.get.asInstanceOf[RecordResponse].record
+      val userid = loginrecord.getAsC[EntityId]("userAccountId").toOption.flatten
         .map(_.print)
-        .orElse(loginRecord.getString("userAccountId"))
+        .orElse(loginrecord.getString("userAccountId"))
         .getOrElse(fail("missing user account id"))
       val authenticatedctx = _with_security(fixture, "two_factor_owner", extraAttributes = Map("userAccountId" -> userid))
 
@@ -1566,12 +1607,12 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
         )
       )
       challenged.toOption.isDefined shouldBe true
-      val challengedRecord = challenged.toOption.get.asInstanceOf[RecordResponse].record
-      challengedRecord.getBoolean("twoFactorRequired") shouldBe Some(true)
-      val challengeId = challengedRecord.getString("challengeId").getOrElse(fail("missing challenge id"))
-      val challengeDelivery = MessageDeliveryStubComponent.deliveries.lastOption.getOrElse(fail("missing two-factor notification"))
-      challengeDelivery.recipient shouldBe "twofactor@example.com"
-      val code = challengeDelivery.attributes.getOrElse("code", fail("missing verification code"))
+      val challengedrecord = challenged.toOption.get.asInstanceOf[RecordResponse].record
+      challengedrecord.getBoolean("twoFactorRequired") shouldBe Some(true)
+      val challengeid = challengedrecord.getString("challengeId").getOrElse(fail("missing challenge id"))
+      val challengedelivery = MessageDeliveryStubComponent.deliveries.lastOption.getOrElse(fail("missing two-factor notification"))
+      challengedelivery.recipient shouldBe "twofactor@example.com"
+      val code = challengedelivery.attributes.getOrElse("code", fail("missing verification code"))
 
       val invalid = _execute_request(
         component,
@@ -1580,7 +1621,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
           "User",
           "verifyTwoFactorLogin",
           properties = List(
-            Property("challengeId", challengeId, None),
+            Property("challengeId", challengeid, None),
             Property("code", "000000", None)
           )
         )
@@ -1594,14 +1635,14 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
           "User",
           "verifyTwoFactorLogin",
           properties = List(
-            Property("challengeId", challengeId, None),
+            Property("challengeId", challengeid, None),
             Property("code", code, None)
           )
         )
       )
       verified.toOption.isDefined shouldBe true
-      val verifiedRecord = verified.toOption.get.asInstanceOf[RecordResponse].record
-      verifiedRecord.getString("accessSessionId") should not be empty
+      val verifiedrecord = verified.toOption.get.asInstanceOf[RecordResponse].record
+      verifiedrecord.getString("accessSessionId") should not be empty
     }
 
   private def _fixture(): _Fixture = {
@@ -1617,7 +1658,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
     ComponentFactory.resetEphemeralSecurityStateForTest()
     MessageDeliveryStubComponent.clearDeliveries()
     val datastorespace = new DataStoreSpace().addDataStore(datastore)
-    val entityStoreSpace = org.goldenport.cncf.entity.EntityStoreSpace.create(
+    val entitystorespace = org.goldenport.cncf.entity.EntityStoreSpace.create(
       ResolvedConfiguration(Configuration.empty, ConfigurationTrace.empty)
     )
     val base = ExecutionContext.create()
@@ -1626,15 +1667,15 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       parent = None,
       observabilityContext = base.observability,
       datastore = Some(DataStoreContext(datastorespace)),
-      entitystore = Some(EntityStoreContext(entityStoreSpace))
+      entitystore = Some(EntityStoreContext(entitystorespace))
     )
-    val eventEngine = org.goldenport.cncf.event.EventEngine.noop(DataStore.noop())
+    val eventengine = org.goldenport.cncf.event.EventEngine.noop(DataStore.noop())
     def build(security: SecurityContext): ExecutionContext = {
       lazy val context: ExecutionContext = ExecutionContext.withSecurityContext(
         ExecutionContext.withRuntimeContext(base, runtime),
         security
       )
-      lazy val uow = new org.goldenport.cncf.unitofwork.UnitOfWork(context, eventEngine, org.goldenport.cncf.unitofwork.CommitRecorder.noop)
+      lazy val uow = new org.goldenport.cncf.unitofwork.UnitOfWork(context, eventengine, org.goldenport.cncf.unitofwork.CommitRecorder.noop)
       lazy val interpreter = new org.goldenport.cncf.unitofwork.UnitOfWorkInterpreter(uow)
       lazy val idInterpreter = new (org.goldenport.cncf.unitofwork.UnitOfWorkOp ~> org.goldenport.Consequence) {
         def apply[A](fa: org.goldenport.cncf.unitofwork.UnitOfWorkOp[A]) = org.goldenport.Consequence(interpreter.execute(fa))
@@ -1696,7 +1737,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
 
   private def _seed_user_account(
     id: EntityId,
-    ownerPrincipalId: String,
+    ownerprincipalid: String,
     email: String,
     loginName: Option[String] = None,
     status: UserAccountStatus = UserAccountStatus.Registered,
@@ -1706,7 +1747,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
     locale: Option[String] = None,
     timeZone: Option[String] = None
   )(using ExecutionContext) = {
-    val principal = ObjectId(Identifier(ownerPrincipalId))
+    val principal = ObjectId(Identifier(ownerprincipalid))
     val rights = SecurityAttributes.Rights(
       SecurityAttributes.Rights.Permissions(read = true, write = true, execute = true),
       SecurityAttributes.Rights.Permissions(read = true, write = false, execute = false),
@@ -1743,19 +1784,19 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
   }
 
   private def _seed_credential(
-    userId: EntityId,
-    ownerPrincipalId: String,
+    userid: EntityId,
+    ownerprincipalid: String,
     password: String
   )(using ExecutionContext) = {
-    val credentialId = _credential_id("credential")
-    val principal = ObjectId(Identifier(ownerPrincipalId))
+    val credentialid = _credential_id("credential")
+    val principal = ObjectId(Identifier(ownerprincipalid))
     val rights = SecurityAttributes.Rights(
       SecurityAttributes.Rights.Permissions(read = true, write = true, execute = true),
       SecurityAttributes.Rights.Permissions(read = true, write = false, execute = false),
       SecurityAttributes.Rights.Permissions(read = true, write = false, execute = false)
     )
     val entity = CredentialCreateEntity(
-      id = Some(credentialId),
+      id = Some(credentialid),
       nameAttributes = NameAttributes.simple(Name("credential")),
       descriptiveAttributes = DescriptiveAttributes.empty,
       contentAttributes = ContentAttributes.empty,
@@ -1766,27 +1807,27 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       auditAttributes = AuditAttributes(),
       mediaAttributes = MediaAttributes(None, Vector.empty, Vector.empty, Vector.empty, Vector.empty),
       contextualAttribute = ContextualAttributes(),
-      userAccountId = userId,
+      userAccountId = userid,
       passwordHash = _password_hash(password)
     )
     EntityStore.standard().create(entity).map(_ => ())
   }
 
   private def _seed_access_session(
-    userId: EntityId,
-    ownerPrincipalId: String,
+    userid: EntityId,
+    ownerprincipalid: String,
     token: String,
     refreshSessionId: Option[EntityId] = None
   )(using ExecutionContext) = {
-    val sessionId = _access_session_id("access_session")
-    val principal = ObjectId(Identifier(ownerPrincipalId))
+    val sessionid = _access_session_id("access_session")
+    val principal = ObjectId(Identifier(ownerprincipalid))
     val rights = SecurityAttributes.Rights(
       SecurityAttributes.Rights.Permissions(read = true, write = true, execute = true),
       SecurityAttributes.Rights.Permissions(read = true, write = false, execute = false),
       SecurityAttributes.Rights.Permissions(read = true, write = false, execute = false)
     )
     val entity = AccessSessionCreateEntity(
-      id = Some(sessionId),
+      id = Some(sessionid),
       nameAttributes = NameAttributes.simple(Name("access_session")),
       descriptiveAttributes = DescriptiveAttributes.empty,
       contentAttributes = ContentAttributes.empty,
@@ -1797,7 +1838,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       auditAttributes = AuditAttributes(),
       mediaAttributes = MediaAttributes(None, Vector.empty, Vector.empty, Vector.empty, Vector.empty),
       contextualAttribute = ContextualAttributes(),
-      userAccountId = userId,
+      userAccountId = userid,
       refreshSessionId = refreshSessionId.map(_.print),
       tokenHash = _password_hash(token),
       issuedAt = java.time.Instant.parse("2026-04-09T00:00:00Z"),
@@ -1809,16 +1850,16 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       ipAddress = None,
       userAgent = None
     )
-    EntityStore.standard().create(entity).map(_ => sessionId)
+    EntityStore.standard().create(entity).map(_ => sessionid)
   }
 
   private def _seed_user_profile(
-    userId: EntityId,
-    ownerPrincipalId: String,
-    profileId: Option[EntityId] = None
+    userid: EntityId,
+    ownerprincipalid: String,
+    profileid: Option[EntityId] = None
   )(using ExecutionContext) = {
-    val id = profileId.getOrElse(_user_profile_id("user_profile"))
-    val principal = ObjectId(Identifier(ownerPrincipalId))
+    val id = profileid.getOrElse(_user_profile_id("user_profile"))
+    val principal = ObjectId(Identifier(ownerprincipalid))
     val rights = SecurityAttributes.Rights(
       SecurityAttributes.Rights.Permissions(read = true, write = true, execute = true),
       SecurityAttributes.Rights.Permissions(read = true, write = false, execute = false),
@@ -1836,7 +1877,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       auditAttributes = AuditAttributes(),
       mediaAttributes = MediaAttributes(None, Vector.empty, Vector.empty, Vector.empty, Vector.empty),
       contextualAttribute = ContextualAttributes(),
-      userAccountId = userId,
+      userAccountId = userid,
       identityPresentation = Some(
         IdentityPresentation.create(
           Name("Integration"),
@@ -1861,19 +1902,19 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
   }
 
   private def _seed_refresh_session(
-    userId: EntityId,
-    ownerPrincipalId: String,
+    userid: EntityId,
+    ownerprincipalid: String,
     token: String
   )(using ExecutionContext) = {
-    val sessionId = _refresh_session_id("refresh_session")
-    val principal = ObjectId(Identifier(ownerPrincipalId))
+    val sessionid = _refresh_session_id("refresh_session")
+    val principal = ObjectId(Identifier(ownerprincipalid))
     val rights = SecurityAttributes.Rights(
       SecurityAttributes.Rights.Permissions(read = true, write = true, execute = true),
       SecurityAttributes.Rights.Permissions(read = true, write = false, execute = false),
       SecurityAttributes.Rights.Permissions(read = true, write = false, execute = false)
     )
     val entity = org.simplemodeling.textus.useraccount.entity.create.RefreshSession(
-      id = Some(sessionId),
+      id = Some(sessionid),
       nameAttributes = NameAttributes.simple(Name("refresh_session")),
       descriptiveAttributes = DescriptiveAttributes.empty,
       contentAttributes = ContentAttributes.empty,
@@ -1884,7 +1925,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       auditAttributes = AuditAttributes(),
       mediaAttributes = MediaAttributes(None, Vector.empty, Vector.empty, Vector.empty, Vector.empty),
       contextualAttribute = ContextualAttributes(),
-      userAccountId = userId,
+      userAccountId = userid,
       successorSessionId = None,
       tokenHash = _password_hash(token),
       issuedAt = java.time.Instant.parse("2026-04-09T00:00:00Z"),
@@ -1896,7 +1937,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       ipAddress = None,
       userAgent = None
     )
-    EntityStore.standard().create(entity).map(_ => sessionId)
+    EntityStore.standard().create(entity).map(_ => sessionid)
   }
 
   private def _user_account_id(label: String): EntityId =
@@ -1957,8 +1998,8 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       origin = ComponentOrigin.Builtin
     )
     val component = GeneratedDomainComponentLoader.create(params).head
-    val notificationStub = MessageDeliveryStubComponent.Factory.create(ComponentCreate(subsystem = subsystem, origin = ComponentOrigin.Builtin)).participants.head
-    subsystem.add(Vector(notificationStub, component))
+    val notificationstub = MessageDeliveryStubComponent.Factory.create(ComponentCreate(subsystem = subsystem, origin = ComponentOrigin.Builtin)).participants.head
+    subsystem.add(Vector(notificationstub, component))
     subsystem.components.find(_.name == component.name).getOrElse(component)
   }
 
@@ -2014,65 +2055,65 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       ))
     ))
 
-  private final case class _ProbeUpdateAction(userId: EntityId) extends Action {
+  private final case class _ProbeUpdateAction(userid: EntityId) extends Action {
     override def name: String = "probeDirectUpdate"
     override def request: Request =
       Request.ofService(
         "Probe",
         "probeDirectUpdate",
-        properties = List(Property("userAccountId", userId.print, None))
+        properties = List(Property("userAccountId", userid.print, None))
       )
     override def createCall(core: ActionCall.Core): ActionCall =
       _ProbeUpdateActionCall(core, this)
   }
 
-  private final case class _ProbeEntityPatchAction(userId: EntityId) extends Action {
+  private final case class _ProbeEntityPatchAction(userid: EntityId) extends Action {
     override def name: String = "probeEntityPatch"
     override def request: Request =
       Request.ofService(
         "Probe",
         "probeEntityPatch",
-        properties = List(Property("userAccountId", userId.print, None))
+        properties = List(Property("userAccountId", userid.print, None))
       )
     override def createCall(core: ActionCall.Core): ActionCall =
       _ProbeEntityPatchActionCall(core, this)
   }
 
-  private final case class _ProbeWorkingSetUpsertAction(userId: EntityId) extends Action {
+  private final case class _ProbeWorkingSetUpsertAction(userid: EntityId) extends Action {
     override def name: String = "probeWorkingSetUpsert"
     override def request: Request =
       Request.ofService(
         "Probe",
         "probeWorkingSetUpsert",
-        properties = List(Property("userAccountId", userId.print, None))
+        properties = List(Property("userAccountId", userid.print, None))
       )
     override def createCall(core: ActionCall.Core): ActionCall =
       _ProbeWorkingSetUpsertActionCall(core, this)
   }
 
   private final case class _ProbeLoginWorkingSetOnlyAction(
-    userId: EntityId
+    userid: EntityId
   ) extends Action {
     override def name: String = "probeLoginWorkingSetOnly"
     override def request: Request =
       Request.ofService(
         "Probe",
         "probeLoginWorkingSetOnly",
-        properties = List(Property("userAccountId", userId.print, None))
+        properties = List(Property("userAccountId", userid.print, None))
       )
     override def createCall(core: ActionCall.Core): ActionCall =
       _ProbeLoginWorkingSetOnlyActionCall(core, this)
   }
 
   private final case class _ProbeLoginSideEffectsAction(
-    userId: EntityId
+    userid: EntityId
   ) extends Action {
     override def name: String = "probeLoginSideEffects"
     override def request: Request =
       Request.ofService(
         "Probe",
         "probeLoginSideEffects",
-        properties = List(Property("userAccountId", userId.print, None))
+        properties = List(Property("userAccountId", userid.print, None))
       )
     override def createCall(core: ActionCall.Core): ActionCall =
       _ProbeLoginSideEffectsActionCall(core, this)
@@ -2111,14 +2152,14 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
   }
 
   private final case class _ProbeTypedUserLoadAction(
-    userId: EntityId
+    userid: EntityId
   ) extends Action {
     override def name: String = "probeTypedUserLoad"
     override def request: Request =
       Request.ofService(
         "Probe",
         "probeTypedUserLoad",
-        properties = List(Property("userAccountId", userId.print, None))
+        properties = List(Property("userAccountId", userid.print, None))
       )
     override def createCall(core: ActionCall.Core): ActionCall =
       _ProbeTypedUserLoadActionCall(core, this)
@@ -2178,13 +2219,13 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
   ) extends ProcedureActionCall {
     override def execute(): org.goldenport.Consequence[OperationResponse] = {
       given ExecutionContext = executionContext
-      val cid = executionContext.entityStoreSpace.dataStoreCollection(action.userId).TAKE
-      val eid = executionContext.entityStoreSpace.dataStoreEntryId(action.userId).TAKE
+      val cid = executionContext.entityStoreSpace.dataStoreCollection(action.userid).TAKE
+      val eid = executionContext.entityStoreSpace.dataStoreEntryId(action.userid).TAKE
       val datastore = executionContext.dataStoreSpace.dataStore(cid).TAKE
       datastore.update(
         cid,
         eid,
-        Record.dataAuto("email_verified_at" -> "2026-04-07T00:00:00Z")
+        Record.dataAuto("emailVerifiedAt" -> "2026-04-07T00:00:00Z")
       ).TAKE
       org.goldenport.Consequence.success(OperationResponse.void)
     }
@@ -2198,8 +2239,8 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       with org.goldenport.cncf.action.ActionCallFeaturePart {
     protected def build_Program =
       for
-        patch <- exec_from(UserAccountUpdateEntity.createC(Record.dataAuto("email_verified_at" -> "2026-04-07T00:00:00Z")))
-        _ <- entity_update(action.userId, patch)
+        patch <- exec_from(UserAccountUpdateEntity.createC(Record.dataAuto("emailVerifiedAt" -> "2026-04-07T00:00:00Z")))
+        _ <- entity_update(action.userid, patch)
       yield
         OperationResponse.void
   }
@@ -2213,8 +2254,8 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val user =
         EntityStore
           .standard()
-          .load[org.simplemodeling.textus.useraccount.entity.UserAccount](action.userId)
-          .flatMap(x => org.goldenport.Consequence.successOrEntityNotFound(x)(action.userId))
+          .load[org.simplemodeling.textus.useraccount.entity.UserAccount](action.userid)
+          .flatMap(x => org.goldenport.Consequence.successOrEntityNotFound(x)(action.userid))
           .TAKE
       component
         .flatMap(_.entitySpace.entityOption[Any](UserAccountQuery.collectionId.name))
@@ -2233,8 +2274,8 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val user =
         EntityStore
           .standard()
-          .load[org.simplemodeling.textus.useraccount.entity.UserAccount](action.userId)
-          .flatMap(x => org.goldenport.Consequence.successOrEntityNotFound(x)(action.userId))
+          .load[org.simplemodeling.textus.useraccount.entity.UserAccount](action.userid)
+          .flatMap(x => org.goldenport.Consequence.successOrEntityNotFound(x)(action.userid))
           .TAKE
       component
         .flatMap(_.entitySpace.entityOption[Any](UserAccountQuery.collectionId.name))
@@ -2259,16 +2300,16 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       with org.goldenport.cncf.action.ActionCallFeaturePart {
     protected def build_Program =
       for
-        patch <- exec_from(UserAccountUpdateEntity.createC(Record.dataAuto("last_login_at" -> "2026-04-07T00:00:00Z")))
-        _ <- entity_update(action.userId, patch)
+        patch <- exec_from(UserAccountUpdateEntity.createC(Record.dataAuto("lastLoginAt" -> "2026-04-07T00:00:00Z")))
+        _ <- entity_update(action.userid, patch)
         user <- exec_from(
           {
             given ExecutionContext = executionContext
             EntityStore
               .standard()
-              .load[org.simplemodeling.textus.useraccount.entity.UserAccount](action.userId)
+              .load[org.simplemodeling.textus.useraccount.entity.UserAccount](action.userid)
           }
-            .flatMap(x => org.goldenport.Consequence.successOrEntityNotFound(x)(action.userId))
+            .flatMap(x => org.goldenport.Consequence.successOrEntityNotFound(x)(action.userid))
         )
         _ <- exec_from {
           component
@@ -2294,7 +2335,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       given ExecutionContext = executionContext
       val cid = executionContext.entityStoreSpace.dataStoreCollection(UserAccountQuery.collectionId).TAKE
       val result = executionContext.dataStoreSpace.search(cid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).TAKE
-      val record = result.records.toVector.find(_.getString("email").contains(action.email)).get
+      val record = result.records.toVector.map(ComponentFactory.normalizeDataStoreRecord).find(_.getString("email").contains(action.email)).get
       val recovered = record.getAsC[EntityId]("id").flatMap(x => org.goldenport.Consequence.successOrPropertyNotFound("id", x)).TAKE
       println(s"EXPECTED-ID=${action.expectedUserId.print}")
       println(s"RECOVERED-ID=${recovered.print}")
@@ -2319,7 +2360,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       given ExecutionContext = executionContext
       val cid = executionContext.entityStoreSpace.dataStoreCollection(UserAccountQuery.collectionId).TAKE
       val result = executionContext.dataStoreSpace.search(cid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).TAKE
-      val rows = result.records.toVector.map { r =>
+      val rows = result.records.toVector.map(ComponentFactory.normalizeDataStoreRecord).map { r =>
         Record.dataAuto(
           "id" -> r.getString("id").getOrElse("<none>"),
           "email" -> r.getString("email").getOrElse("<none>"),
@@ -2340,8 +2381,8 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       val user =
         EntityStore
           .standard()
-          .load[org.simplemodeling.textus.useraccount.entity.UserAccount](action.userId)
-          .flatMap(x => org.goldenport.Consequence.successOrEntityNotFound(x)(action.userId))
+          .load[org.simplemodeling.textus.useraccount.entity.UserAccount](action.userid)
+          .flatMap(x => org.goldenport.Consequence.successOrEntityNotFound(x)(action.userid))
           .TAKE
       org.goldenport.Consequence.success(
         OperationResponse(
@@ -2362,7 +2403,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       given ExecutionContext = executionContext
       val cid = executionContext.entityStoreSpace.dataStoreCollection(UserAccountQuery.collectionId).TAKE
       val result = executionContext.dataStoreSpace.search(cid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty)).TAKE
-      val ids = result.records.toVector
+      val ids = result.records.toVector.map(ComponentFactory.normalizeDataStoreRecord)
         .filter(_.getString("email").contains(action.email))
         .map(_.getAsC[EntityId]("id").flatMap(x => org.goldenport.Consequence.successOrPropertyNotFound("id", x)).TAKE)
       val user = EntityStore
@@ -2417,7 +2458,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       for
         cid <- executionContext.entityStoreSpace.dataStoreCollection(collectionId)
         result <- executionContext.dataStoreSpace.search(cid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty))
-      yield result.records.toVector
+      yield result.records.toVector.map(ComponentFactory.normalizeDataStoreRecord)
 
     private def _entity_id_of(record: Record): org.goldenport.Consequence[EntityId] =
       record.getAsC[EntityId]("id").flatMap(x => org.goldenport.Consequence.successOrPropertyNotFound("id", x))
@@ -2433,7 +2474,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       for
         user <- exec_from(_raw_user_by_email(action.email)(using executionContext))
         credential <- exec_from(_raw_credential_by_user_and_password(user.id, _password_hash(action.password))(using executionContext))
-        patch <- exec_from(UserAccountUpdateEntity.createC(Record.dataAuto("last_login_at" -> "2026-04-07T00:00:00Z")))
+        patch <- exec_from(UserAccountUpdateEntity.createC(Record.dataAuto("lastLoginAt" -> "2026-04-07T00:00:00Z")))
         _ <- entity_update(user.id, patch)
         loaded <- exec_from(
           EntityStore
@@ -2475,15 +2516,15 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       yield user
 
     private def _raw_credential_by_user_and_password(
-      userId: EntityId,
+      userid: EntityId,
       hashedPassword: String
     )(using ExecutionContext): org.goldenport.Consequence[org.simplemodeling.textus.useraccount.entity.Credential] =
       for
         records <- _raw_records(org.simplemodeling.textus.useraccount.entity.query.Credential.collectionId)
         ids <- records
           .filter(r =>
-            r.getString("user_account_id").contains(userId.print) &&
-              r.getString("password_hash").contains(hashedPassword)
+            r.getString("userAccountId").contains(userid.print) &&
+              r.getString("passwordHash").contains(hashedPassword)
           )
           .traverse(_entity_id_of)
         credentials <- ids.traverse(id =>
@@ -2501,7 +2542,7 @@ final class UserAccountDataStoreUpdateSpec extends AnyWordSpec with Matchers {
       for
         cid <- executionContext.entityStoreSpace.dataStoreCollection(collectionId)
         result <- executionContext.dataStoreSpace.search(cid, org.goldenport.cncf.datastore.QueryDirective(org.goldenport.cncf.datastore.Query.Empty))
-      yield result.records.toVector
+      yield result.records.toVector.map(ComponentFactory.normalizeDataStoreRecord)
 
     private def _entity_id_of(record: Record): org.goldenport.Consequence[EntityId] =
       record.getAsC[EntityId]("id").flatMap(x => org.goldenport.Consequence.successOrPropertyNotFound("id", x))

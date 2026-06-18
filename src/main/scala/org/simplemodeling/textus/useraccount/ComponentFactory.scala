@@ -43,7 +43,7 @@ import org.simplemodeling.textus.useraccount.entity.update.{AccessSession => Acc
  *  version Mar. 24, 2026
  *  version Apr. 25, 2026
  *  version May.  9, 2026
- * @version Jun.  5, 2026
+ * @version Jun. 18, 2026
  * @author  ASAMI, Tomoharu
  */
 class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePlanProvider:
@@ -96,34 +96,34 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
     override val action: AggregateService.LoadUserAccountQuery
   ) extends AggregateService.LoadUserAccountActionCall, UserAccountActionSupport:
     protected def build_Program: ExecUowM[OperationResponse] =
-      val internalCtx = ExecutionContext.withAggregateInternalRead(executionContext, true)
-      val memberQuery = Query(Record.data("userAccountId" -> action.id.value))
+      val internalctx = ExecutionContext.withAggregateInternalRead(executionContext, true)
+      val memberquery = Query(Record.data("userAccountId" -> action.id.value))
       for
         account <- exec_from(
           EntityStore
             .standard()
-            .load[UserAccountEntity](action.id)(using summon, internalCtx)
+            .load[UserAccountEntity](action.id)(using summon, internalctx)
             .flatMap(x => Consequence.successOrEntityNotFound(x)(action.id))
         )
         profiles <- exec_from(
           EntityStore
             .standard()
-            .search[UserProfileEntity](EntityQuery(UserProfileEntity.collectionId, memberQuery))(using summon, internalCtx)
+            .search[UserProfileEntity](EntityQuery(UserProfileEntity.collectionId, memberquery))(using summon, internalctx)
         )
         credentials <- exec_from(
           EntityStore
             .standard()
-            .search[CredentialEntity](EntityQuery(CredentialEntity.collectionId, memberQuery))(using summon, internalCtx)
+            .search[CredentialEntity](EntityQuery(CredentialEntity.collectionId, memberquery))(using summon, internalctx)
         )
         accessSessions <- exec_from(
           EntityStore
             .standard()
-            .search[AccessSessionEntity](EntityQuery(AccessSessionEntity.collectionId, memberQuery))(using summon, internalCtx)
+            .search[AccessSessionEntity](EntityQuery(AccessSessionEntity.collectionId, memberquery))(using summon, internalctx)
         )
         refreshSessions <- exec_from(
           EntityStore
             .standard()
-            .search[RefreshSessionEntity](EntityQuery(RefreshSessionEntity.collectionId, memberQuery))(using summon, internalCtx)
+            .search[RefreshSessionEntity](EntityQuery(RefreshSessionEntity.collectionId, memberquery))(using summon, internalctx)
         )
       yield
         OperationResponse.RecordResponse(
@@ -559,7 +559,7 @@ class ComponentFactory extends UserAccountComponent.Factory with EntityRuntimePl
 
     protected final def requestPasswordReset(record: Record): ExecUowM[OperationResponse] =
       for
-        email <- exec_from(requiredString(record, List("email")))
+        email <- exec_from(requiredString(record, List("email", "identifier")))
         _users <- _raw_user_accounts_by_email(email)
         _ <- _users.headOption match
           case Some(user) =>
@@ -1683,7 +1683,7 @@ object ComponentFactory:
     if (!settings.enabled || _allows_debug_auth_operation_mode(mode))
       Consequence.unit
     else
-      Consequence.configurationInvalid("textus.debug.auth.enabled is only allowed in develop or test operation mode")
+      Consequence.configurationInvalid("textus.debug.auth.enabled is only allowed in demo, develop, or test operation mode")
   }
 
   private def _debug_auth_operation_mode(conf: ResolvedConfiguration): String =
@@ -1693,7 +1693,7 @@ object ComponentFactory:
       .toLowerCase(java.util.Locale.ROOT)
 
   private def _allows_debug_auth_operation_mode(mode: String): Boolean =
-    mode == "develop" || mode == "dev" || mode == "debug" || mode == "test"
+    mode == "demo" || mode == "develop" || mode == "dev" || mode == "debug" || mode == "test"
 
   private def _ensure_debug_user_account(
     settings: DebugAuthSettings
@@ -1822,23 +1822,16 @@ object ComponentFactory:
     val normalized = record.fields.map { field =>
       _canonical_property_name(field.key) -> field
     }
-    val collisions = normalized
-      .groupBy(_._1)
-      .collect {
-        case (key, values) if values.lengthCompare(1) > 0 =>
-          key -> values.map(_._2.key).distinct
+    val keys = normalized.map(_._1).distinct
+    val fields = keys.map { key =>
+      val candidates = normalized.collect {
+        case (`key`, field) => field
       }
-      .filter(_._2.lengthCompare(1) > 0)
-    if (collisions.nonEmpty) {
-      val message = collisions.toVector.sortBy(_._1).map {
-        case (key, aliases) => s"$key: ${aliases.mkString(", ")}"
-      }.mkString("; ")
-      Consequence.argumentInvalid(s"Duplicate property aliases after canonical naming: $message")
-    } else {
-      Consequence.success(Record(normalized.map {
-        case (key, field) => field.copy(key = key)
-      }))
+      val selected =
+        candidates.reverse.find(f => Option(f.value).exists(_ != null)).getOrElse(candidates.last)
+      selected.copy(key = key)
     }
+    Consequence.success(Record(fields))
   }
 
   private def _canonical_property_name(name: String): String = {
@@ -1974,7 +1967,7 @@ object ComponentFactory:
     status: UserAccountStatus,
     suspensionReason: Option[String] = None
   )(using ctx: ExecutionContext): UserAccountUpdate =
-    val activationStatus = activationStatusForUserAccountStatus(status)
+    val activationstatus = activationStatusForUserAccountStatus(status)
     status match
       case UserAccountStatus.Suspended =>
         UserAccountUpdate
@@ -1985,7 +1978,7 @@ object ComponentFactory:
           .withSuspensionReason(suspensionReason.map(Update.set).getOrElse(Update.noop))
           .withResourceAttributes(
             ResourceAttributesUpdate(
-              activationStatus = Update.set(activationStatus)
+              activationStatus = Update.set(activationstatus)
             )
           )
           .build()
@@ -1998,7 +1991,7 @@ object ComponentFactory:
           .withSuspensionReason(Update.setNull)
           .withResourceAttributes(
             ResourceAttributesUpdate(
-              activationStatus = Update.set(activationStatus)
+              activationStatus = Update.set(activationstatus)
             )
           )
           .build()
@@ -2368,6 +2361,8 @@ object ComponentFactory:
     val shown = m.conclusion.show
     shown.contains("Entity.NotFound[") ||
     shown.contains("entity.not-found[") ||
+    shown.contains("Access session not found") ||
+    shown.contains("Refresh session not found") ||
     shown.contains("invalid session") ||
     shown.contains("Invalid UniversalId format")
   }
@@ -2586,18 +2581,22 @@ object ComponentFactory:
   private def _load_access_session(
     sessionId: EntityId
   )(using ctx: ExecutionContext): Consequence[AccessSessionEntity] =
-    EntityStore.standard().load[AccessSessionEntity](sessionId).flatMap {
-      case Some(session) => Consequence.success(session)
-      case None => _load_access_session_from_raw(sessionId)
-    }
+    _load_access_session_from_raw(sessionId).orElse(
+      EntityStore.standard().load[AccessSessionEntity](sessionId).flatMap {
+        case Some(session) => Consequence.success(session)
+        case None => Consequence.entityNotFound(s"Access session not found: ${sessionId.print}")
+      }
+    )
 
   private def _load_refresh_session(
     sessionId: EntityId
   )(using ctx: ExecutionContext): Consequence[RefreshSessionEntity] =
-    EntityStore.standard().load[RefreshSessionEntity](sessionId).flatMap {
-      case Some(session) => Consequence.success(session)
-      case None => _load_refresh_session_from_raw(sessionId)
-    }
+    _load_refresh_session_from_raw(sessionId).orElse(
+      EntityStore.standard().load[RefreshSessionEntity](sessionId).flatMap {
+        case Some(session) => Consequence.success(session)
+        case None => Consequence.entityNotFound(s"Refresh session not found: ${sessionId.print}")
+      }
+    )
 
   private def _load_access_session_from_raw(
     sessionId: EntityId

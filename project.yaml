@@ -20,6 +20,12 @@ packaging:
   kind: car
   car:
     source_dir: src/main/car
+    runtime:
+      cncf:
+        minimum: "0.4.11"
+        excluded: []
+        tested:
+          - "0.4.11"
 
 warehouse:
   repository_artifacts:
